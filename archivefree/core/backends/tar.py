@@ -42,6 +42,10 @@ _CODECS = {
     "tar.lz4": (None, "lz4", ["-dc"]),
 }
 
+#: Formats we can rewrite. The rest are read-only.
+_WRITABLE_TAR = ("tar", "tar.gz", "tar.bz2", "tar.xz", "tar.lzma",
+                 "tar.zst", "tar.lz4")
+
 _LABELS = {
     "tar": "TAR archive",
     "tar.gz": "Gzip-compressed TAR",
@@ -311,6 +315,110 @@ class TarBackend(Backend):
             progress.set_message("Finished")
         return written
 
+    # -- modifying ---------------------------------------------------------
+    @property
+    def supports_modification(self) -> bool:
+        # Uncompressed tar could be appended to in place, but the compressed
+        # variants cannot, and a rewrite keeps one code path for all of them.
+        return self.format in _WRITABLE_TAR
+
+    def add(self, sources, into: str = "", progress: Progress | None = None) -> int:
+        from ..create import _strip_owner
+        from .zip import _rewritten, _size_of, _walk_sources
+
+        pairs = _walk_sources(sources, into)
+        if not pairs:
+            return 0
+        before = {e.path for e in self.list_entries()}
+        replaced = {arc for _, arc in pairs}
+
+        total = sum(_size_of(p) for p, _ in pairs) or 1
+        if progress:
+            progress.begin(total, "Adding…")
+        done = 0
+
+        with _rewritten(self.path) as temp, self._writer(temp) as target:
+            source_tar = self._open_tar()
+            try:
+                for member in source_tar:
+                    if progress:
+                        progress.check()
+                    if normalise_path(member.name) in replaced:
+                        continue
+                    target.addfile(member, source_tar.extractfile(member)
+                                   if member.isfile() else None)
+            finally:
+                source_tar.close()
+            for full, arcname in pairs:
+                if progress:
+                    progress.check()
+                    progress.set_message(os.path.basename(full))
+                target.add(full, arcname, recursive=False, filter=_strip_owner)
+                done += _size_of(full)
+                if progress:
+                    progress.current = min(done, total)
+                    progress._emit()
+
+        self._invalidate()
+        return len(replaced - before)
+
+    def delete(self, entries, progress: Progress | None = None) -> int:
+        from .zip import _rewritten
+
+        doomed = set()
+        for entry in entries:
+            doomed.add(entry.path)
+            if entry.is_dir:
+                doomed.update(e.path for e in self.list_entries()
+                              if e.path.startswith(entry.path + "/"))
+        if not doomed:
+            return 0
+
+        if progress:
+            progress.begin(len(self.list_entries()) or 1, "Removing…")
+        removed = 0
+
+        with _rewritten(self.path) as temp, self._writer(temp) as target:
+            source_tar = self._open_tar()
+            try:
+                for member in source_tar:
+                    if progress:
+                        progress.check()
+                        progress.step(1)
+                    if normalise_path(member.name) in doomed:
+                        removed += 1
+                        continue
+                    target.addfile(member, source_tar.extractfile(member)
+                                   if member.isfile() else None)
+            finally:
+                source_tar.close()
+
+        self._invalidate()
+        return removed
+
+    def _writer(self, path: str):
+        """Open a tar for writing in this archive's own compression format."""
+        from ..create import compressor_argv
+
+        if self.format == "tar":
+            return tarfile.open(path, "w")
+        if self.format == "tar.gz":
+            return tarfile.open(path, "w:gz")
+        if self.format == "tar.bz2":
+            return tarfile.open(path, "w:bz2")
+        if self.format in ("tar.xz", "tar.lzma"):
+            if self.format == "tar.lzma":
+                wrapper = lzma.LZMAFile(path, "wb", format=lzma.FORMAT_ALONE)
+                return tarfile.open(fileobj=wrapper, mode="w|")
+            return tarfile.open(path, "w:xz")
+        argv = compressor_argv(self.format, "normal")
+        if argv is None:
+            raise ArchiveError(
+                f"ArchiveFree can’t modify {_LABELS.get(self.format, self.format)} "
+                "archives without its compression tool installed."
+            )
+        return _PipeWriter(argv, path)
+
     def test(self, progress: Progress | None = None) -> list[str]:
         problems: list[str] = []
         tf = self._open_tar()
@@ -397,3 +505,34 @@ def _restore(target: str, member: tarfile.TarInfo) -> None:
         os.utime(target, (member.mtime, member.mtime))
     except (OSError, OverflowError, ValueError):
         pass
+
+
+class _PipeWriter:
+    """A tarfile writing through an external compressor (zstd, lz4).
+
+    Used as a context manager so the caller can treat every tar variant the
+    same way; closing it waits for the compressor to finish flushing.
+    """
+
+    def __init__(self, argv: list[str], destination: str):
+        self._out = open(destination, "wb")
+        self._proc = subprocess.Popen(argv, stdin=subprocess.PIPE,
+                                      stdout=self._out, stderr=subprocess.PIPE)
+        self._tar = tarfile.open(fileobj=self._proc.stdin, mode="w|")
+
+    def __enter__(self):
+        return self._tar
+
+    def __exit__(self, *exc_info):
+        self._tar.close()
+        if self._proc.stdin:
+            self._proc.stdin.close()
+        stderr = self._proc.stderr.read() if self._proc.stderr else b""
+        self._proc.wait()
+        if self._proc.stderr:
+            self._proc.stderr.close()
+        self._out.close()
+        if self._proc.returncode != 0 and exc_info[0] is None:
+            raise ArchiveError("Recompressing the archive failed.",
+                               detail=stderr.decode("utf-8", "replace"))
+        return False

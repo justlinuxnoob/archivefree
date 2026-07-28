@@ -179,6 +179,12 @@ class ArchiveWindow(Adw.ApplicationWindow):
         archive_section.append("Extract Here", "win.extract-here")
         menu.append_section(None, archive_section)
 
+        edit_section = Gio.Menu()
+        edit_section.append("Add Files…", "win.add-files")
+        edit_section.append("Add Folder…", "win.add-folder")
+        edit_section.append("Delete Selected", "win.delete-selected")
+        menu.append_section(None, edit_section)
+
         tools_section = Gio.Menu()
         tools_section.append("New Archive…", "app.create")
         tools_section.append("Check Integrity", "win.test")
@@ -273,6 +279,9 @@ class ArchiveWindow(Adw.ApplicationWindow):
             ("select-all", self._action_select_all, ["<Control>a"]),
             ("search", self._action_search, ["<Control>f"]),
             ("preview", self._action_preview, ["space"]),
+            ("add-files", self._action_add_files, ["<Control><Shift>a"]),
+            ("add-folder", self._action_add_folder, None),
+            ("delete-selected", self._action_delete_selected, ["Delete"]),
             ("test", self._action_test, None),
             ("properties", self._action_properties, ["<Control>Return"]),
             ("shortcuts", self._action_shortcuts, ["<Control>question"]),
@@ -370,6 +379,145 @@ class ArchiveWindow(Adw.ApplicationWindow):
         from .preview import PreviewDialog
 
         PreviewDialog(self, nodes[0]).present(self)
+
+    # -- modifying the archive -------------------------------------------
+    def _can_modify(self) -> bool:
+        if self.backend is None:
+            return False
+        try:
+            return self.backend.supports_modification
+        except Exception:
+            return False
+
+    def _action_add_files(self, *_args) -> None:
+        self._pick_and_add(folder=False)
+
+    def _action_add_folder(self, *_args) -> None:
+        self._pick_and_add(folder=True)
+
+    def _pick_and_add(self, folder: bool) -> None:
+        if not self._can_modify():
+            self.toast(self._why_read_only())
+            return
+        dialog = Gtk.FileDialog(title="Add a Folder" if folder else "Add Files")
+        if self.archive_path:
+            parent = os.path.dirname(self.archive_path)
+            if os.path.isdir(parent):
+                dialog.set_initial_folder(Gio.File.new_for_path(parent))
+
+        def done(source, result) -> None:
+            try:
+                if folder:
+                    chosen = [source.select_folder_finish(result)]
+                else:
+                    files = source.open_multiple_finish(result)
+                    chosen = [files.get_item(i) for i in range(files.get_n_items())]
+            except GLib.Error:
+                return
+            paths = [f.get_path() for f in chosen if f and f.get_path()]
+            if paths:
+                self._add_paths(paths)
+
+        if folder:
+            dialog.select_folder(self, None, done)
+        else:
+            dialog.open_multiple(self, None, done)
+
+    def _add_paths(self, paths: list[str]) -> None:
+        backend = self.backend
+        if backend is None:
+            return
+        # Add into whichever folder is on screen, which is what people expect.
+        into = self.browser.current.path if self.browser.current else ""
+        self.progress.begin(f"Adding to {os.path.basename(self.archive_path or '')}")
+
+        def work(progress: Progress) -> int:
+            return backend.add(paths, into=into, progress=progress)
+
+        def done(count: int) -> None:
+            self.progress.end()
+            self.toast(f"Added {format_count(count, 'item')}.")
+            self._reload_after_change()
+
+        def failed(exc: BaseException) -> None:
+            self.progress.end()
+            present_error(self, exc, title="Couldn’t Add to the Archive")
+
+        self._run_job(work, done, failed)
+
+    def _action_delete_selected(self, *_args) -> None:
+        if not self._can_modify():
+            self.toast(self._why_read_only())
+            return
+        nodes = self.browser.selected_nodes()
+        if not nodes:
+            return
+
+        entries = [n.entry for n in nodes if n.entry is not None]
+        for node in nodes:
+            if node.is_dir and node.entry is None:
+                from ..core.entry import ArchiveEntry
+
+                entries.append(ArchiveEntry(path=node.path, is_dir=True))
+        if not entries:
+            return
+
+        from .dialogs import confirm
+
+        what = f"“{nodes[0].name}”" if len(nodes) == 1 else format_count(len(nodes), "item")
+        confirm(
+            self,
+            heading="Delete from the archive?",
+            body=f"{what} will be removed from "
+                 f"“{os.path.basename(self.archive_path or '')}”. "
+                 "This rewrites the archive and cannot be undone.",
+            confirm_label="Delete",
+            destructive=True,
+            callback=lambda ok: self._delete_entries(entries) if ok else None,
+        )
+
+    def _delete_entries(self, entries) -> None:
+        backend = self.backend
+        if backend is None:
+            return
+        self.progress.begin("Removing from the archive…")
+
+        def work(progress: Progress) -> int:
+            return backend.delete(entries, progress=progress)
+
+        def done(count: int) -> None:
+            self.progress.end()
+            self.toast(f"Removed {format_count(count, 'item')}.")
+            self._reload_after_change()
+
+        def failed(exc: BaseException) -> None:
+            self.progress.end()
+            present_error(self, exc, title="Couldn’t Remove from the Archive")
+
+        self._run_job(work, done, failed)
+
+    def _why_read_only(self) -> str:
+        if self.info is None:
+            return "This archive can’t be changed."
+        return (f"{self.info.format_label}s can be opened and extracted, "
+                "but not changed.")
+
+    def _reload_after_change(self) -> None:
+        """Rebuild the view from the archive as it now stands on disk."""
+        if self.archive_path is None or self.backend is None:
+            return
+        where = self.browser.current.path if self.browser.current else ""
+        entries = self.backend.list_entries()
+        info = self.backend.info()
+        self.root = tree.build_tree(entries)
+        self.browser.load(self.root)
+        if where:
+            self.browser.navigate_path(where)
+        self.info = info
+        self.window_title.set_subtitle(
+            f"{format_count(info.entry_count, 'file')} · {format_size(info.total_size)}"
+        )
+        self._refresh_view()
 
     def _action_test(self, *_args) -> None:
         if self.backend is None:

@@ -76,15 +76,42 @@ class SevenZipBackend(Backend):
     def _type_args(self) -> list[str]:
         return [f"-t{self._type_override}"] if self._type_override else []
 
-    def _password_args(self) -> list[str]:
-        # An empty -p turns an interactive prompt into a clean error.
-        return [f"-p{self.password}" if self.password else "-p"]
+    #: 7-Zip commands that write to the archive rather than read from it.
+    _WRITE_COMMANDS = ("a", "d", "u", "rn")
+
+    def _argv(self, args: list[str], extra: list[str]) -> list[str]:
+        """Assemble a 7-Zip command line with the switches in the right place.
+
+        Switches have to come before the ``--`` end-of-options marker. Appending
+        them to the whole argument list put them after it, and 7-Zip duly tried
+        to add files called "-y" and "-bsp1" to the archive.
+        """
+        command = args[0] if args else None
+        return [
+            self._exe(), *args[:1], *self._type_args(), *extra,
+            *self._password_args(command), *args[1:],
+        ]
+
+    def _password_args(self, command: str | None = None) -> list[str]:
+        """Password flags for a 7-Zip invocation.
+
+        The bare ``-p`` is asymmetric and the asymmetry is easy to miss. When
+        *reading*, it supplies an empty password and turns 7-Zip's interactive
+        prompt into a clean error we can translate. When *writing*, it means
+        "encrypt this, and ask me for the passphrase" — so passing it to an add
+        or delete makes 7-Zip block on a prompt that nobody can answer.
+        """
+        if self.password:
+            return [f"-p{self.password}"]
+        if command in self._WRITE_COMMANDS:
+            return []
+        return ["-p"]
 
     def _run(self, args: list[str], progress: Progress | None = None,
              capture_stdout: bool = True) -> subprocess.CompletedProcess:
         # Note: no -bse1 here. That flag folds errors into stdout, which would
         # leave stderr empty and make every failure look like a generic one.
-        argv = [self._exe(), *args, *self._type_args(), "-y", *self._password_args()]
+        argv = self._argv(args, extra=["-y"])
         proc = subprocess.Popen(
             argv,
             stdout=subprocess.PIPE if capture_stdout else subprocess.DEVNULL,
@@ -102,13 +129,18 @@ class SevenZipBackend(Backend):
             raise Cancelled()
         return subprocess.CompletedProcess(argv, proc.returncode, out or b"", err or b"")
 
-    def _run_streaming(self, args: list[str], progress: Progress, weight: int) -> None:
-        """Run 7-Zip with percentage progress piped back to the UI."""
-        argv = [self._exe(), *args, *self._type_args(), "-y", "-bsp1",
-                *self._password_args()]
+    def _run_streaming(self, args: list[str], progress: Progress, weight: int,
+                       cwd: str | None = None) -> None:
+        """Run 7-Zip with percentage progress piped back to the UI.
+
+        ``cwd`` is passed to the child rather than applied with os.chdir: this
+        runs on a worker thread, and changing the process-wide directory would
+        corrupt every relative path the rest of the app is using.
+        """
+        argv = self._argv(args, extra=["-y", "-bsp1"])
         proc = subprocess.Popen(
             argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            stdin=subprocess.DEVNULL, bufsize=0,
+            stdin=subprocess.DEVNULL, bufsize=0, cwd=cwd,
         )
         progress.on_cancel(lambda: _kill(proc))
 
@@ -336,6 +368,61 @@ class SevenZipBackend(Backend):
             progress.current = progress.total
             progress.set_message("Finished")
         return written
+
+    # -- modifying ---------------------------------------------------------
+    @property
+    def supports_modification(self) -> bool:
+        # 7-Zip can only write the formats it also compresses; the rest (rar,
+        # iso, cab, deb…) are read-only by nature.
+        return self.format in ("7z", "zip", "tar")
+
+    def add(self, sources, into: str = "", progress: Progress | None = None) -> int:
+        """Add files using 7-Zip's own update mode, which edits in place."""
+        sources = [os.path.abspath(s) for s in sources]
+        if not sources:
+            return 0
+        before = {e.path for e in self.list_entries()}
+
+        if progress:
+            progress.begin(1000, "Adding…")
+
+        # 7-Zip stores paths relative to its working directory, so run it from
+        # the common parent and pass relative names.
+        base = os.path.dirname(sources[0]) if len(sources) == 1 \
+            else os.path.commonpath([os.path.dirname(s) for s in sources])
+        relative = [os.path.relpath(s, base) for s in sources]
+
+        args = ["a", self.path]
+        if into:
+            # -spf keeps the full path we give it, letting us place entries in
+            # a subfolder of the archive without moving files around on disk.
+            args.append("-spf")
+            relative = [f"{into}/{r}" for r in relative]
+        args += ["--", *relative]
+
+        self._run_streaming(args, progress or Progress(), weight=1000, cwd=base)
+        self._invalidate()
+        after = {e.path for e in self.list_entries()}
+        return len(after - before)
+
+    def delete(self, entries, progress: Progress | None = None) -> int:
+        """Remove entries with 7-Zip's delete command."""
+        targets = []
+        for entry in entries:
+            targets.append(entry.path)
+            if entry.is_dir:
+                targets.append(f"{entry.path}/*")
+        if not targets:
+            return 0
+
+        before = {e.path for e in self.list_entries()}
+        if progress:
+            progress.begin(1000, "Removing…")
+        self._run_streaming(["d", self.path, "--", *targets],
+                            progress or Progress(), weight=1000)
+        self._invalidate()
+        after = {e.path for e in self.list_entries()}
+        return len(before - after)
 
     def test(self, progress: Progress | None = None) -> list[str]:
         if progress:

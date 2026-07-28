@@ -10,8 +10,10 @@ tools produce. When we detect it, we hand the archive to the 7-Zip backend.
 
 from __future__ import annotations
 
+import contextlib
 import datetime
 import os
+import tempfile
 import zipfile
 from collections.abc import Iterable
 
@@ -206,6 +208,88 @@ class ZipBackend(Backend):
             progress.set_message("Finished")
         return written
 
+    # -- modifying ---------------------------------------------------------
+    @property
+    def supports_modification(self) -> bool:
+        # Encrypted archives would need the password to re-encrypt every entry
+        # we copy across, which the stdlib cannot do.
+        return not any(e.encrypted for e in self.list_entries())
+
+    def add(self, sources, into: str = "", progress: Progress | None = None) -> int:
+        """Append files to the archive.
+
+        Written into a copy and swapped in atomically rather than appended in
+        place: appending to the real file leaves it truncated and unreadable if
+        anything fails halfway, and this is a file the user already had.
+        """
+        pairs = _walk_sources(sources, into)
+        if not pairs:
+            return 0
+
+        existing = {e.path for e in self.list_entries()}
+        total = sum(_size_of(p) for p, _ in pairs) or 1
+        if progress:
+            progress.begin(total, "Adding…")
+
+        done = 0
+        with _rewritten(self.path) as temp, \
+                zipfile.ZipFile(self.path, "r") as source_zip, \
+                zipfile.ZipFile(temp, "w", zipfile.ZIP_DEFLATED,
+                                allowZip64=True) as target:
+                target.comment = source_zip.comment
+                replaced = {arc for _, arc in pairs}
+                for item in source_zip.infolist():
+                    if progress:
+                        progress.check()
+                    if normalise_path(item.filename) in replaced:
+                        continue  # the new copy wins
+                    target.writestr(item, source_zip.read(item.filename))
+                for full, arcname in pairs:
+                    if progress:
+                        progress.check()
+                        progress.set_message(os.path.basename(full))
+                    target.write(full, arcname)
+                    done += _size_of(full)
+                    if progress:
+                        progress.current = min(done, total)
+                        progress._emit()
+
+        self._invalidate()
+        return len([a for _, a in pairs if a not in existing])
+
+    def delete(self, entries, progress: Progress | None = None) -> int:
+        """Remove entries by rewriting the archive without them."""
+        doomed = set()
+        for entry in entries:
+            doomed.add(entry.path)
+            if entry.is_dir:
+                doomed.update(e.path for e in self.list_entries()
+                              if e.path.startswith(entry.path + "/"))
+        if not doomed:
+            return 0
+
+        keep = [e for e in self.list_entries() if e.path not in doomed]
+        if progress:
+            progress.begin(len(keep) or 1, "Removing…")
+
+        removed = 0
+        with _rewritten(self.path) as temp, \
+                zipfile.ZipFile(self.path, "r") as source_zip, \
+                zipfile.ZipFile(temp, "w", zipfile.ZIP_DEFLATED,
+                                allowZip64=True) as target:
+                target.comment = source_zip.comment
+                for item in source_zip.infolist():
+                    if progress:
+                        progress.check()
+                        progress.step(1)
+                    if normalise_path(item.filename) in doomed:
+                        removed += 1
+                        continue
+                    target.writestr(item, source_zip.read(item.filename))
+
+        self._invalidate()
+        return removed
+
     def test(self, progress: Progress | None = None) -> list[str]:
         zf = self._open()
         entries = [e for e in self.list_entries() if not e.is_dir]
@@ -318,3 +402,65 @@ def _os_error(exc: OSError, destination: str) -> Exception:
             detail=str(exc),
         )
     return ArchiveError("Extraction failed.", detail=str(exc))
+
+
+def _walk_sources(sources, into: str) -> list[tuple[str, str]]:
+    """Expand files and folders into (path on disk, name inside the archive)."""
+    import posixpath
+
+    pairs: list[tuple[str, str]] = []
+    for source in sources:
+        source = os.path.abspath(source)
+        base = os.path.dirname(source)
+        if os.path.isdir(source):
+            for dirpath, dirnames, filenames in os.walk(source):
+                dirnames.sort()
+                filenames.sort()
+                for name in filenames:
+                    full = os.path.join(dirpath, name)
+                    rel = os.path.relpath(full, base).replace(os.sep, "/")
+                    pairs.append((full, posixpath.join(into, rel) if into else rel))
+        else:
+            rel = os.path.basename(source)
+            pairs.append((source, posixpath.join(into, rel) if into else rel))
+    return pairs
+
+
+def _size_of(path: str) -> int:
+    try:
+        return os.path.getsize(path)
+    except OSError:
+        return 0
+
+
+@contextlib.contextmanager
+def _rewritten(path: str):
+    """Build a replacement archive beside ``path`` and swap it in atomically.
+
+    Modifying an archive means rewriting a file the user already has, so the
+    original is never touched until the replacement is complete on disk. If
+    anything raises — including a cancellation — the temporary file is removed
+    and the original is left exactly as it was.
+
+    The temporary lives in the same directory so ``os.replace`` is an atomic
+    rename rather than a copy across filesystems.
+    """
+    directory = os.path.dirname(os.path.abspath(path)) or "."
+    handle, temp = tempfile.mkstemp(prefix=".archivefree-", suffix=".tmp",
+                                    dir=directory)
+    os.close(handle)
+    try:
+        yield temp
+    except BaseException:
+        try:
+            os.unlink(temp)
+        except OSError:
+            pass
+        raise
+    else:
+        # Carry the original's permissions over; mkstemp creates 0600.
+        try:
+            os.chmod(temp, os.stat(path).st_mode & 0o7777)
+        except OSError:
+            pass
+        os.replace(temp, path)

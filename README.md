@@ -59,6 +59,9 @@ until you say so.
   finds every part of a multi-part archive automatically.
 - **Makes new archives too** — pick a format, pick how hard to compress, add a
   password or split it into parts if you want.
+- **Edits archives in place** — add files to an existing archive, or delete
+  entries from it. Changes are written to a copy and swapped in only when
+  complete, so an interrupted edit never damages the original.
 - **Stays responsive** — a 4 GB archive won't freeze the window, and you can
   cancel anything mid-way.
 - **Explains itself when things go wrong** — "this archive is damaged, it may
@@ -145,6 +148,8 @@ exact command to install it rather than just failing.
 | <kbd>Ctrl</kbd>+<kbd>O</kbd> | Open an archive |
 | <kbd>Ctrl</kbd>+<kbd>N</kbd> | New archive |
 | <kbd>Ctrl</kbd>+<kbd>E</kbd> | Extract (selection, or everything) |
+| <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>A</kbd> | Add files to the archive |
+| <kbd>Delete</kbd> | Delete the selection from the archive |
 | <kbd>Ctrl</kbd>+<kbd>F</kbd> | Search inside the archive |
 | <kbd>Space</kbd> | Preview the selected file |
 | <kbd>Alt</kbd>+<kbd>↑</kbd> | Go to the parent folder |

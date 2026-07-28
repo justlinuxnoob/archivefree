@@ -15,7 +15,14 @@ from archivefree.core import registry
 from archivefree.core.create import CreateOptions, create_archive
 from archivefree.core.tree import build_tree
 
+# The drag module pulls in GTK 4. Skip cleanly where that is unavailable —
+# importorskip("gi") is not enough, since PyGObject can be installed while the
+# GTK 4 typelib is not, which raises rather than failing the import.
 pytest.importorskip("gi", reason="PyGObject required for the drag payload module")
+try:
+    import archivefree.ui  # noqa: F401
+except (ImportError, ValueError) as exc:  # ValueError: typelib not available
+    pytest.skip(f"GTK 4 not available: {exc}", allow_module_level=True)
 
 
 @pytest.fixture

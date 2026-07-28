@@ -80,6 +80,18 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
+    <release version="0.4.0" date="2026-07-28">
+      <description>
+        <p>Archives can now be edited, not only read and created.</p>
+        <ul>
+          <li>Add files or folders to an existing zip, 7z or tar archive</li>
+          <li>Delete entries from one, with the Delete key or the menu</li>
+          <li>Changes are written to a temporary copy and swapped in only once
+              complete, so a failure or a cancellation leaves the original
+              archive exactly as it was</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.3.0" date="2026-07-28">
       <description>
         <p>Fixes found by testing against genuine archives downloaded from the

@@ -77,6 +77,40 @@ class Backend:
         """Verify integrity. Returns a list of problem descriptions (empty = OK)."""
         return []
 
+    # -- modifying an existing archive -----------------------------------
+    #
+    # These rewrite a file the user already has, so every implementation must
+    # build the new archive beside the old one and swap it in with os.replace
+    # only once it is complete. A failure or a cancellation must leave the
+    # original exactly as it was.
+
+    @property
+    def supports_modification(self) -> bool:
+        """True when entries can be added to or removed from this archive."""
+        return False
+
+    def add(self, sources: Iterable[str], into: str = "",
+            progress: Progress | None = None) -> int:
+        """Add files or folders from disk. ``into`` is a folder inside the archive.
+
+        Returns the number of entries added.
+        """
+        raise NotImplementedError
+
+    def delete(self, entries: Iterable[ArchiveEntry],
+               progress: Progress | None = None) -> int:
+        """Remove entries. Returns the number removed."""
+        raise NotImplementedError
+
+    def _invalidate(self) -> None:
+        """Drop cached listings after the archive on disk has changed."""
+        self._entries = None
+        if hasattr(self, "_info"):
+            self._info = None
+        if hasattr(self, "_zf") and self._zf is not None:
+            self._zf.close()
+            self._zf = None
+
     def close(self) -> None:
         pass
 
