@@ -152,6 +152,19 @@ def _sniff(head: bytes, path: str) -> str | None:
     return None
 
 
+#: Suffixes that mean "tar plus this compression" in a single extension.
+#: Keyed by the compression suffix they stand in for, so a ".txz" is never
+#: mistaken for a gzip short form.
+_SHORT_TAR_FORMS = {
+    ".gz": (".tgz", ".taz"),
+    ".bz2": (".tbz", ".tbz2", ".tb2"),
+    ".xz": (".txz",),
+    ".zst": (".tzst",),
+    ".lz4": (),
+    ".lzma": (),
+}
+
+
 def _looks_like_tar_ext(path: str, compressed_ext: str) -> bool:
     """Decide if a compressed stream wraps a tar, based on the filename.
 
@@ -161,14 +174,13 @@ def _looks_like_tar_ext(path: str, compressed_ext: str) -> bool:
     the stream as a single file if the tar header turns out to be bogus.
     """
     low = path.lower()
+    # Short forms are checked first: "bundle.tgz" is a tar.gz but does not end
+    # in ".gz" at all, so the long-form test below would never see it.
+    if any(low.endswith(short) for short in _SHORT_TAR_FORMS.get(compressed_ext, ())):
+        return True
     if not low.endswith(compressed_ext):
         return False
-    stem = low[: -len(compressed_ext)]
-    if stem.endswith(".tar"):
-        return True
-    # .tgz / .tbz2 / .txz / .tzst style short forms
-    return any(low.endswith(e) for e in (".tgz", ".taz", ".tbz", ".tbz2", ".tb2",
-                                         ".txz", ".tzst"))
+    return low[: -len(compressed_ext)].endswith(".tar")
 
 
 def _iso_check(fh) -> bool:
@@ -196,6 +208,10 @@ def format_from_extension(path: str) -> str | None:
 def detect_format(path: str) -> str | None:
     """Return the format key for ``path``, or None if it isn't a known archive."""
     try:
+        if os.path.getsize(path) == 0:
+            # Nothing can be an archive with no bytes in it, whatever it's
+            # called — don't let the extension fallback below vouch for it.
+            return None
         with open(path, "rb") as fh:
             head = fh.read(512)
             found = _sniff(head, path)
