@@ -13,8 +13,6 @@ import os
 import shutil
 import subprocess
 
-from gi.repository import Gio, GLib
-
 from .._version import APP_ID
 
 DESKTOP_FILE = f"{APP_ID}.desktop"
@@ -76,6 +74,11 @@ def in_flatpak() -> bool:
     return os.path.exists("/.flatpak-info")
 
 
+def _home_dir() -> str:
+    """The user's home directory, without needing PyGObject to ask."""
+    return os.path.expanduser("~")
+
+
 def _host_config_dir() -> str:
     """The *host's* config directory, even when we're inside a Flatpak.
 
@@ -85,14 +88,15 @@ def _host_config_dir() -> str:
     ``~/.config``, which ``--filesystem=host`` makes reachable at its true path.
     """
     if in_flatpak():
-        return os.path.join(GLib.get_home_dir(), ".config")
-    return GLib.get_user_config_dir()
+        return os.path.join(_home_dir(), ".config")
+    return os.environ.get("XDG_CONFIG_HOME") or os.path.join(_home_dir(), ".config")
 
 
 def _host_data_dir() -> str:
     if in_flatpak():
-        return os.path.join(GLib.get_home_dir(), ".local", "share")
-    return GLib.get_user_data_dir()
+        return os.path.join(_home_dir(), ".local", "share")
+    return os.environ.get("XDG_DATA_HOME") or os.path.join(
+        _home_dir(), ".local", "share")
 
 
 #: Where we remember what was default before we changed anything.
@@ -113,6 +117,8 @@ def _read_mimeapps_default(mime_type: str) -> str | None:
     path = _mimeapps_path()
     if not os.path.exists(path):
         return None
+    from gi.repository import GLib
+
     try:
         keyfile = GLib.KeyFile()
         keyfile.load_from_file(path, GLib.KeyFileFlags.NONE)
@@ -137,7 +143,7 @@ def _host_application_dirs() -> list[str]:
     else:
         dirs.append("/usr/share/applications")
         dirs.append("/usr/local/share/applications")
-    home = GLib.get_home_dir()
+    home = _home_dir()
     dirs.append(os.path.join(home, ".local/share/flatpak/exports/share/applications"))
     dirs.append("/var/lib/flatpak/exports/share/applications")
     if in_flatpak():
@@ -152,6 +158,8 @@ def registered_handlers(mime_type: str) -> list[str]:
     itself would consult them. Our own entry is filtered out, so this answers
     "what would open this if ArchiveFree weren't here?".
     """
+    from gi.repository import GLib
+
     found: list[str] = []
     for directory in _host_application_dirs():
         cache = os.path.join(directory, "mimeinfo.cache")
@@ -181,6 +189,8 @@ def current_default(mime_type: str) -> str | None:
         return explicit
 
     if not in_flatpak():
+        from gi.repository import Gio
+
         app_info = Gio.AppInfo.get_default_for_type(mime_type, False)
         if app_info is not None:
             return app_info.get_id()
@@ -224,6 +234,8 @@ def is_installed() -> bool:
         # Flatpak exports our .desktop to the host; inside the sandbox we can
         # see the same file under the app's own share directory.
         return os.path.exists(f"/app/share/applications/{DESKTOP_FILE}")
+    from gi.repository import Gio
+
     try:
         # PyGObject raises rather than returning None when the file is absent.
         return Gio.DesktopAppInfo.new(DESKTOP_FILE) is not None
@@ -313,6 +325,8 @@ def _mimeapps_path() -> str:
 
 def _write_mimeapps(mime_type: str, desktop_file: str) -> bool:
     """Edit ~/.config/mimeapps.list directly, preserving everything else in it."""
+    from gi.repository import GLib
+
     path = _mimeapps_path()
     try:
         keyfile = GLib.KeyFile()
@@ -331,6 +345,8 @@ def _write_mimeapps(mime_type: str, desktop_file: str) -> bool:
 
 
 def _remove_association(mime_type: str) -> bool:
+    from gi.repository import GLib
+
     path = _mimeapps_path()
     if not os.path.exists(path):
         return False

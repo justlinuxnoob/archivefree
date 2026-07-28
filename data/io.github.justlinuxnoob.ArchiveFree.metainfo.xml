@@ -80,6 +80,13 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
+    <release version="0.5.1" date="2026-07-28">
+      <description>
+        <p>Build fix: the list of handled file types no longer requires
+           PyGObject to read, so it can be checked on systems without a
+           desktop installed.</p>
+      </description>
+    </release>
     <release version="0.5.0" date="2026-07-28">
       <description>
         <p>Recognises the containers that are really a ZIP, RAR or 7z wearing a
