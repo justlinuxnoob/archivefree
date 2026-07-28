@@ -30,10 +30,15 @@ from .utils import format_count, format_size, home_relative
 class CreateDialog(Adw.Dialog):
     __gtype_name__ = "ArchiveFreeCreateDialog"
 
-    def __init__(self, application, sources: list[str], parent_window=None):
+    def __init__(self, application, sources: list[str], parent_window=None,
+                 close_when_done: bool = False):
         super().__init__(title="New Archive", content_width=560, content_height=680)
         self.application = application
         self.parent_window = parent_window
+        #: True when the window behind us exists only to serve this one
+        #: compression — a file manager's "Compress…" errand rather than an
+        #: archive manager the user chose to open.
+        self.close_when_done = close_when_done
         self.settings = config()
         self.sources = [os.path.abspath(s) for s in sources]
         self._destination_dir = (
@@ -432,6 +437,9 @@ class CreateDialog(Adw.Dialog):
             self.set_can_close(True)
             self._job = None
             self.close()
+            if self.close_when_done:
+                self._finish_and_exit(result)
+                return
             window = self.parent_window
             if window is not None:
                 size = os.path.getsize(result) if os.path.exists(result) else 0
@@ -458,6 +466,9 @@ class CreateDialog(Adw.Dialog):
             self.set_can_close(True)
             self._job = None
             self.close()
+            if self.close_when_done:
+                for window in list(self.application.get_windows()):
+                    window.close()
 
         def on_progress(progress: Progress) -> None:
             if progress.total > 0:
@@ -472,6 +483,31 @@ class CreateDialog(Adw.Dialog):
 
         self._job = Job(work, on_done=done, on_error=failed, on_cancelled=cancelled,
                         on_progress=on_progress).start()
+
+    def _finish_and_exit(self, result: str) -> None:
+        """Report the finished archive, then get out of the way.
+
+        The notification is worth a moment on screen, so the window closes a
+        beat later rather than vanishing the instant the file is written.
+        """
+        from gi.repository import Gio
+
+        try:
+            notification = Gio.Notification.new("Archive created")
+            notification.set_body(
+                f"{os.path.basename(result)} · {format_size(os.path.getsize(result))}"
+                if os.path.exists(result) else os.path.basename(result)
+            )
+            self.application.send_notification(None, notification)
+        except Exception:
+            pass
+
+        def leave() -> bool:
+            for window in list(self.application.get_windows()):
+                window.close()
+            return False
+
+        GLib.timeout_add(600, leave)
 
     def _on_cancel(self, *_args) -> None:
         if self._job is not None:

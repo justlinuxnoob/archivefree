@@ -80,6 +80,25 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
+    <release version="0.6.0" date="2026-07-28">
+      <description>
+        <p>Three bugs found by a user, all of which needed fixing at the root.</p>
+        <ul>
+          <li>Dragging files out now offers the file target other file managers
+              negotiate on. The constructor used for it does not exist in
+              PyGObject, and the error was being silently swallowed, so only a
+              raw URI list was ever offered — enough for some file managers,
+              nothing for others</li>
+          <li>Compressing from the file manager while ArchiveFree was already
+              open failed with "this doesn't look like an archive". The flag
+              was parsed in the launching process while the file list was
+              handled in the running one, so the two never met</li>
+          <li>Compressing from the file manager now closes when it finishes,
+              instead of leaving a window behind. A window you opened yourself
+              still stays</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.5.1" date="2026-07-28">
       <description>
         <p>Build fix: the list of handled file types no longer requires

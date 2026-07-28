@@ -84,9 +84,15 @@ class ArchiveFreeApplication(Adw.Application):
     __gtype_name__ = "ArchiveFreeApplication"
 
     def __init__(self) -> None:
+        # HANDLES_COMMAND_LINE, not HANDLES_OPEN. The difference matters: with
+        # HANDLES_OPEN the option flags are parsed in the *launching* process
+        # while do_open runs in the *primary* one, so "--new-archive" never
+        # reached an app that was already running — the file manager's Compress
+        # entry just made it try to open the folder as an archive. Command-line
+        # handling runs in the primary instance and receives the whole argv.
         super().__init__(
             application_id=APP_ID,
-            flags=Gio.ApplicationFlags.HANDLES_OPEN,
+            flags=Gio.ApplicationFlags.HANDLES_COMMAND_LINE,
         )
         self.settings = config()
         self._add_main_option_entries()
@@ -106,18 +112,62 @@ class ArchiveFreeApplication(Adw.Application):
         self.connect("handle-local-options", self._on_local_options)
 
     def _on_local_options(self, _app, options: GLib.VariantDict) -> int:
+        # Only --version is answered locally; everything else has to reach the
+        # primary instance, which is what do_command_line is for.
         if options.contains("version"):
             print(f"{APP_NAME} {__version__}")
             return 0
-        self._mode_create = options.contains("new-archive")
-        self._mode_extract_here = options.contains("extract-here")
-        destination = options.lookup_value("extract-to", GLib.VariantType("s"))
-        self._mode_extract_to = destination.get_string() if destination else None
         return -1  # carry on
 
-    _mode_create = False
-    _mode_extract_here = False
-    _mode_extract_to: str | None = None
+    def do_command_line(self, command_line: Gio.ApplicationCommandLine) -> int:
+        """Handle an invocation, whether or not an instance is already running.
+
+        This always executes in the primary instance, so the flags and the file
+        list arrive together no matter which process the user actually started.
+        """
+        options = command_line.get_options_dict()
+        mode_create = options.contains("new-archive")
+        mode_extract_here = options.contains("extract-here")
+        destination = options.lookup_value("extract-to", GLib.VariantType("s"))
+        mode_extract_to = destination.get_string() if destination else None
+
+        # Paths from a file manager may be relative to *its* directory, not ours.
+        cwd = command_line.get_cwd() or os.getcwd()
+        paths = []
+        for argument in command_line.get_arguments()[1:]:
+            if argument.startswith("-"):
+                continue
+            paths.append(argument if os.path.isabs(argument)
+                         else os.path.normpath(os.path.join(cwd, argument)))
+
+        self.activate_with(paths, mode_create, mode_extract_here, mode_extract_to)
+        return 0
+
+    def activate_with(self, paths: list[str], mode_create: bool,
+                      mode_extract_here: bool, mode_extract_to: str | None) -> None:
+        if not paths:
+            window = self._new_window()
+            window.present()
+            self._maybe_offer_default(window)
+            return
+
+        if mode_create:
+            existing = self.get_active_window()
+            window = existing or self._new_window()
+            window.present()
+            # A window opened solely to compress something should close when the
+            # job is done — being asked to compress a folder is a one-shot
+            # errand, not a request to leave an archive manager running. A
+            # window that was already open belongs to the user and stays.
+            self.open_create_dialog(paths, parent=window,
+                                    close_when_done=existing is None)
+            return
+
+        if mode_extract_here or mode_extract_to:
+            self._headless_extract(paths, mode_extract_to)
+            return
+
+        self.open_paths(paths)
 
     # ------------------------------------------------------------------
     def do_startup(self) -> None:
@@ -168,24 +218,6 @@ class ArchiveFreeApplication(Adw.Application):
         window.present()
         self._maybe_offer_default(window)
 
-    def do_open(self, files, n_files: int, hint: str) -> None:
-        paths = [f.get_path() for f in files if f.get_path()]
-        if not paths:
-            self.do_activate()
-            return
-
-        if self._mode_create:
-            window = self.get_active_window() or self._new_window()
-            window.present()
-            self.open_create_dialog(paths, parent=window)
-            return
-
-        if self._mode_extract_here or self._mode_extract_to:
-            self._headless_extract(paths)
-            return
-
-        self.open_paths(paths)
-
     def open_paths(self, paths: list[str]) -> None:
         window = None
         for path in paths:
@@ -201,7 +233,8 @@ class ArchiveFreeApplication(Adw.Application):
         self.apply_column_visibility(window)
         return window
 
-    def _headless_extract(self, paths: list[str]) -> None:
+    def _headless_extract(self, paths: list[str],
+                          destination: str | None = None) -> None:
         """Extract straight away, with a window showing progress.
 
         Used by the file-manager "Extract Here" menu entries: the user gets a
@@ -214,8 +247,8 @@ class ArchiveFreeApplication(Adw.Application):
             def once(win=window, source=path):
                 if win.backend is None:
                     return True  # still loading; check again
-                if self._mode_extract_to:
-                    win.start_extraction(self._mode_extract_to, entries=None)
+                if destination:
+                    win.start_extraction(destination, entries=None)
                 else:
                     win._action_extract_here()
                 return False
@@ -223,14 +256,17 @@ class ArchiveFreeApplication(Adw.Application):
             GLib.timeout_add(120, once)
 
     # ------------------------------------------------------------------
-    def open_create_dialog(self, paths: list[str], parent=None) -> None:
+    def open_create_dialog(self, paths: list[str], parent=None,
+                           close_when_done: bool = False) -> None:
         from .ui.create import CreateDialog
 
         window = parent or self.get_active_window()
         if window is None:
             window = self._new_window()
             window.present()
-        CreateDialog(self, paths, parent_window=window).present(window)
+            close_when_done = True
+        CreateDialog(self, paths, parent_window=window,
+                     close_when_done=close_when_done).present(window)
 
     def _action_create(self, *_args) -> None:
         self.open_create_dialog([])

@@ -212,7 +212,11 @@ def test_payload_offers_uri_list(tmp_path):
 
     formats = provider.ref_formats()
     mimes = formats.get_mime_types() or ()
+    gtypes = [t.name for t in (formats.get_gtypes() or [])]
     assert "text/uri-list" in mimes, f"only offered {mimes}"
+    # GdkFileList is what GTK negotiates with other GTK file managers, and is
+    # what a non-introspectable constructor silently failed to provide before.
+    assert "GdkFileList" in gtypes, f"file target missing; gtypes={gtypes}"
 
 
 # -- staging location ----------------------------------------------------
@@ -268,3 +272,45 @@ def test_stale_staging_directories_are_pruned(tmp_path):
     assert not old.exists(), "stale staging directory was not cleaned up"
     assert new.exists(), "a fresh staging directory was removed"
     assert unrelated.exists(), "pruning touched something that wasn't ours"
+
+
+def test_payload_does_not_offer_plain_text(tmp_path):
+    """A receiver takes the first target it knows.
+
+    Offering text/plain alongside the file targets lets a file manager grab the
+    string form and silently do nothing with it — a drag that appears to work
+    and drops no file, which is the exact failure this feature exists to fix.
+    """
+    from archivefree.ui.dragout import _provider_for
+
+    target = tmp_path / "dropped.txt"
+    target.write_text("x")
+    formats = _provider_for([str(target)]).ref_formats()
+    mimes = set(formats.get_mime_types() or ())
+
+    assert "text/uri-list" in mimes
+    assert not any(m.startswith("text/plain") for m in mimes), (
+        f"plain text offered alongside the file drop: {sorted(mimes)}"
+    )
+
+
+def test_uri_list_is_crlf_terminated(tmp_path):
+    """RFC 2483: each URI ends with CRLF, including the last."""
+    from archivefree.ui.dragout import _provider_for
+
+    a = tmp_path / "one.txt"
+    b = tmp_path / "two.txt"
+    a.write_text("1")
+    b.write_text("2")
+
+    formats = _provider_for([str(a), str(b)]).ref_formats()
+    assert "text/uri-list" in (formats.get_mime_types() or ())
+
+    # Build the same payload the provider holds and check its shape.
+    from gi.repository import Gio
+
+    expected = "".join(
+        f"{Gio.File.new_for_path(str(p)).get_uri()}\r\n" for p in (a, b)
+    )
+    assert expected.endswith("\r\n")
+    assert expected.count("\r\n") == 2

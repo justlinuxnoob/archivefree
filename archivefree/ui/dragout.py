@@ -185,31 +185,43 @@ def _prune_stale(root: str) -> None:
 
 
 def _provider_for(paths: list[str]) -> Gdk.ContentProvider:
-    """Offer the dragged files in every form a file manager might ask for.
+    """Offer the dragged files as a file drop, and only as a file drop.
 
-    ``text/uri-list`` is the universal one and is what makes this work on
-    Wayland; ``GdkFileList`` is what GTK 4 apps prefer natively. Providing both
-    means Nautilus, Nemo, Thunar, Dolphin and PCManFM all accept the drop.
+    Order matters and so does restraint. ``GdkFileList`` goes first because GTK
+    negotiates a union in order and knows how to serialise it to the
+    ``text/uri-list`` that GTK 3 file managers ask for; the explicit uri-list
+    provider follows as a belt-and-braces fallback for receivers that don't
+    consult GTK's serialisers.
+
+    Deliberately *no* plain-text provider. Offering ``text/plain`` alongside is
+    tempting — it would let you drop a path into a terminal — but a receiver
+    picks the first target it recognises, and a file manager that grabs
+    ``text/plain`` gets a string instead of a file and quietly does nothing.
+    A drag that silently fails is exactly the bug this feature exists to fix,
+    so the payload stays unambiguous.
     """
     gfiles = [Gio.File.new_for_path(p) for p in paths]
     providers: list[Gdk.ContentProvider] = []
 
-    try:
-        file_list = Gdk.FileList.new_from_list(gfiles)
-        providers.append(Gdk.ContentProvider.new_typed(Gdk.FileList, file_list))
-    except (AttributeError, TypeError):
-        pass  # older GTK without GdkFileList construction from Python
+    # Gdk.ContentProvider.new_typed() is a C varargs function and is not
+    # introspectable, so it does not exist in PyGObject at all. Calling it
+    # raised AttributeError, which an over-broad except was swallowing — the
+    # GdkFileList target was silently never offered, leaving only the raw
+    # uri-list. Receivers that negotiate on GdkFileList got nothing to accept.
+    # new_for_value() is the binding-friendly constructor and does the same job.
+    file_list = Gdk.FileList.new_from_list(gfiles)
+    providers.append(Gdk.ContentProvider.new_for_value(file_list))
 
-    uri_text = "\r\n".join(f.get_uri() for f in gfiles) + "\r\n"
+    # A single file is also offered as a bare GFile: some receivers advertise
+    # only that target and ignore lists entirely.
+    if len(gfiles) == 1:
+        providers.append(Gdk.ContentProvider.new_for_value(gfiles[0]))
+
+    # CRLF-separated with a trailing terminator, per RFC 2483.
+    uri_text = "".join(f"{f.get_uri()}\r\n" for f in gfiles)
     providers.append(
         Gdk.ContentProvider.new_for_bytes(
             "text/uri-list", GLib.Bytes.new(uri_text.encode("utf-8"))
-        )
-    )
-    # Plain text so dropping into a terminal or text editor pastes the paths.
-    providers.append(
-        Gdk.ContentProvider.new_for_value(
-            GLib.Variant("s", "\n".join(f.get_path() or "" for f in gfiles)).unpack()
         )
     )
 
