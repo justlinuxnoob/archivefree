@@ -24,8 +24,23 @@ until you say so.
 
 <div align="center">
 
+<img src="data/screenshots/01-browse.png" width="720" alt="Browsing the contents of a zip archive">
+
 *Browse first. Extract second.*
 
+</div>
+
+<div align="center">
+<table>
+<tr>
+<td width="50%"><img src="data/screenshots/02-extract.png" alt="The extract dialog, showing exactly where files will be written"></td>
+<td width="50%"><img src="data/screenshots/03-preview.png" alt="Previewing a README file from inside the archive"></td>
+</tr>
+<tr>
+<td align="center"><em>You always know where files will land</em></td>
+<td align="center"><em>Read a file without unpacking anything</em></td>
+</tr>
+</table>
 </div>
 
 ### The rest of it

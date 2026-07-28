@@ -33,6 +33,27 @@
 
   <launchable type="desktop-id">io.github.justlinuxnoob.ArchiveFree.desktop</launchable>
 
+  <!-- Flathub mirrors these, so they must stay reachable at a stable URL.
+       They point at a tag rather than a branch for exactly that reason. -->
+  <screenshots>
+    <screenshot type="default">
+      <caption>Browse an archive's contents before extracting anything</caption>
+      <image>https://raw.githubusercontent.com/justlinuxnoob/archivefree/v0.1.1/data/screenshots/01-browse.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>Choose exactly where files go, with no surprises</caption>
+      <image>https://raw.githubusercontent.com/justlinuxnoob/archivefree/v0.1.1/data/screenshots/02-extract.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>Preview a file without extracting the archive</caption>
+      <image>https://raw.githubusercontent.com/justlinuxnoob/archivefree/v0.1.1/data/screenshots/03-preview.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>Create an archive in a few clicks</caption>
+      <image>https://raw.githubusercontent.com/justlinuxnoob/archivefree/v0.1.1/data/screenshots/04-create.png</image>
+    </screenshot>
+  </screenshots>
+
   <url type="homepage">https://github.com/justlinuxnoob/archivefree</url>
   <url type="bugtracker">https://github.com/justlinuxnoob/archivefree/issues</url>
   <url type="vcs-browser">https://github.com/justlinuxnoob/archivefree</url>
@@ -59,6 +80,18 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
+    <release version="0.1.1" date="2026-07-28">
+      <description>
+        <p>Bug fixes found by an expanded test suite.</p>
+        <ul>
+          <li>Archives named .tgz, .txz, .tbz2 and .tzst are now recognised as
+              tar archives instead of opening as a single unnamed blob</li>
+          <li>An empty file is no longer identified as an archive by its name alone</li>
+          <li>Extraction now defaults to the folder the archive is in, rather than
+              wherever you last extracted something</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.1.0" date="2026-07-28">
       <description>
         <p>First public release.</p>

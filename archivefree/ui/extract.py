@@ -33,8 +33,14 @@ class ExtractDialog(Adw.Dialog):
         # An archive whose contents already sit in one folder doesn't need another.
         all_entries = window.backend.list_entries() if window.backend else []
         self._has_own_root = tree.common_root(all_entries) is not None
-        self._destination = self.settings["last_extract_dir"] or self._archive_dir \
-            or GLib.get_home_dir()
+        # Default beside the archive. Remembering the last-used folder instead
+        # would mean one extraction to /tmp silently redirects every archive
+        # afterwards; "next to the file I just opened" is what people expect,
+        # and it matches what Extract Here does.
+        self._destination = (
+            self._archive_dir if os.path.isdir(self._archive_dir)
+            else (self.settings["last_extract_dir"] or GLib.get_home_dir())
+        )
 
         self._build(entries, selection_label)
 
