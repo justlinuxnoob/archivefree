@@ -147,3 +147,81 @@ def test_scripts_are_executable(tmp_path, monkeypatch):
     script = tmp_path / "nautilus" / "scripts" / "Extract Here"
     assert script.exists()
     assert os.access(script, os.X_OK), "script is not executable"
+
+
+# -- python extension (top-level menu entries) ---------------------------
+
+
+def test_extension_source_is_shipped():
+    """The installer must be able to find the extension it copies."""
+    source = filemanagers._extension_source()
+    assert source is not None, "the extension file was not found in any known location"
+    assert os.path.exists(source)
+
+
+def test_extension_is_valid_python():
+    """It runs inside the file manager, so a syntax error would break Nautilus."""
+    import ast
+
+    source = filemanagers._extension_source()
+    with open(source, encoding="utf-8") as fh:
+        tree = ast.parse(fh.read())
+    classes = [n.name for n in ast.walk(tree) if isinstance(n, ast.ClassDef)]
+    assert "ArchiveFreeMenuProvider" in classes
+
+    methods = {n.name for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)}
+    # These are the two entry points every host calls.
+    assert "get_file_items" in methods
+    assert "get_background_items" in methods
+
+
+def test_extension_installs_where_the_host_can_load_it(tmp_path, monkeypatch):
+    monkeypatch.setattr(filemanagers, "_data_home", lambda: str(tmp_path))
+    monkeypatch.setattr(filemanagers, "extension_host_available", lambda _m: True)
+
+    assert filemanagers.install_extension()
+    for parent, child in filemanagers._EXTENSION_DIRS.values():
+        assert (tmp_path / parent / child / "archivefree.py").exists()
+
+    assert filemanagers.uninstall_extension()
+    for parent, child in filemanagers._EXTENSION_DIRS.values():
+        assert not (tmp_path / parent / child / "archivefree.py").exists()
+
+
+def test_extension_is_skipped_when_no_host_can_load_it(tmp_path, monkeypatch):
+    """Installing it where no *-python binding exists would be a silent no-op."""
+    monkeypatch.setattr(filemanagers, "_data_home", lambda: str(tmp_path))
+    monkeypatch.setattr(filemanagers, "extension_host_available", lambda _m: False)
+
+    assert filemanagers.install_extension() is False
+    assert not list(tmp_path.rglob("archivefree.py"))
+
+
+def test_scripts_are_the_fallback_when_no_extension_host(tmp_path, monkeypatch):
+    """Without an extension host the user still gets entries, via scripts."""
+    monkeypatch.setattr(filemanagers, "_data_home", lambda: str(tmp_path))
+    monkeypatch.setattr(filemanagers, "_config_home", lambda: str(tmp_path))
+    monkeypatch.setattr(filemanagers, "extension_host_available", lambda _m: False)
+
+    results = filemanagers.install_all()
+    assert "Nautilus and Caja scripts" in results
+    assert (tmp_path / "nautilus" / "scripts" / "Extract Here").exists()
+
+
+def test_extension_replaces_scripts_when_available(tmp_path, monkeypatch):
+    """Both at once would give the user duplicate entries."""
+    monkeypatch.setattr(filemanagers, "_data_home", lambda: str(tmp_path))
+    monkeypatch.setattr(filemanagers, "_config_home", lambda: str(tmp_path))
+
+    # Start with scripts installed, as an older version would have left them.
+    monkeypatch.setattr(filemanagers, "extension_host_available", lambda _m: False)
+    filemanagers.install_all()
+    assert (tmp_path / "nautilus" / "scripts" / "Extract Here").exists()
+
+    # Now the host is present: the extension wins and the scripts are removed.
+    monkeypatch.setattr(filemanagers, "extension_host_available", lambda _m: True)
+    results = filemanagers.install_all()
+    assert results.get("Nautilus and Caja menus") is True
+    assert (tmp_path / "nautilus-python" / "extensions" / "archivefree.py").exists()
+    assert not (tmp_path / "nautilus" / "scripts" / "Extract Here").exists(), \
+        "scripts left behind alongside the extension — duplicate menu entries"

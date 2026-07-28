@@ -48,6 +48,9 @@ until you say so.
 - **Opens what you'll actually run into** — zip, 7z, rar, tar and every
   compressed flavour of it (gz, bz2, xz, zst), plain gz/bz2/xz/zst, iso, cab,
   deb, rpm, lha, arj, cpio, wim, dmg and more.
+- **Drag files out to extract them** — drag straight from the archive into a
+  file manager or onto the desktop. This works on Wayland, where the drag-out
+  feature of every other Linux archive manager has been broken for years.
 - **Preview without extracting** — read a text file, a README or a config, or
   look at an image, straight out of the archive.
 - **Never silently overwrites** — if a file already exists it asks, and shows
@@ -118,8 +121,10 @@ undo it any time from **Preferences → Default Archive Application**.
 |---|:---:|:---:|---|
 | `.zip` | ✅ | ✅ | built in |
 | `.tar`, `.tar.gz`, `.tar.bz2`, `.tar.xz` | ✅ | ✅ | built in |
-| `.gz`, `.bz2`, `.xz` (single files) | ✅ | — | built in |
+| `.gz`, `.bz2`, `.xz` (single files) | ✅ | ✅ | built in |
 | `.tar.zst`, `.zst` | ✅ | ✅ | `zstd` |
+| `.tar.lz4`, `.lz4` | ✅ | ✅ | `lz4` |
+| `.tar.lzma`, `.lzma` | ✅ | ✅ | built in |
 | `.7z` | ✅ | ✅ | `7zip` |
 | `.rar` | ✅ | — | `7zip` or `unrar` |
 | `.iso`, `.cab`, `.dmg`, `.wim`, `.msi`, `.xar` | ✅ | — | `7zip` |

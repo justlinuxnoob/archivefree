@@ -80,6 +80,22 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
+    <release version="0.2.0" date="2026-07-28">
+      <description>
+        <p>Drag files straight out of an archive, and every format you can open
+           you can now also create.</p>
+        <ul>
+          <li>Drag entries from the archive into a file manager or onto the
+              desktop to extract them. This works on Wayland, where every other
+              Linux archive manager's drag-to-extract has been broken for years</li>
+          <li>Create .gz, .xz, .bz2, .zst and .lz4 single-file archives, plus
+              tar.lz4 and tar.lzma — the dialog previously offered 7 formats
+              while the engine could write 14</li>
+          <li>Right-click entries appear at the top level in Nautilus, Nemo and
+              Caja instead of being buried in a "Scripts" submenu</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.1.3" date="2026-07-28">
       <description>
         <p>Works properly outside Debian-based distributions.</p>

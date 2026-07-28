@@ -335,9 +335,27 @@ class CreateDialog(Adw.Dialog):
             self.summary_label.set_text("Choose at least one file or folder to compress.")
             self.create_button.set_sensitive(False)
             return
-        self.create_button.set_sensitive(bool(self.name_row.get_text().strip()))
 
         count, total = _measure(self.sources)
+        fmt = self._format_key
+
+        # .gz/.xz/.bz2/.zst hold exactly one file — there is no filename table
+        # to put a second one in. Explain that here rather than failing later.
+        if fmt in detect.CREATABLE_SINGLE:
+            single_file = len(self.sources) == 1 and os.path.isfile(self.sources[0])
+            if not single_file:
+                label = detect.FORMATS[fmt].extensions[0]
+                what = "a folder" if (len(self.sources) == 1
+                                      and os.path.isdir(self.sources[0])) \
+                    else f"{len(self.sources)} items"
+                self.summary_label.set_text(
+                    f"{label} can only compress one file, but you chose {what}.\n"
+                    f"Choose TAR{label.upper()} instead to keep everything together."
+                )
+                self.create_button.set_sensitive(False)
+                return
+
+        self.create_button.set_sensitive(bool(self.name_row.get_text().strip()))
         target = os.path.join(self._destination_dir, self.name_row.get_text().strip())
         note = f"{format_count(count, 'file')} · {format_size(total)} → {target}"
         if self.password_row.get_text():
@@ -496,6 +514,13 @@ def _format_label(key: str) -> str:
         "tar.xz": "TAR.XZ — smaller, slower",
         "tar.zst": "TAR.ZST — small and fast",
         "tar.bz2": "TAR.BZ2 — older, widely supported",
+        "tar.lz4": "TAR.LZ4 — fastest, least compression",
+        "tar.lzma": "TAR.LZMA — older form of xz",
         "tar": "TAR — no compression",
+        "gz": "GZ — one file only",
+        "xz": "XZ — one file only",
+        "bz2": "BZ2 — one file only",
+        "zst": "ZST — one file only",
+        "lz4": "LZ4 — one file only",
     }
     return labels.get(key, key.upper())

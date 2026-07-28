@@ -400,20 +400,107 @@ def uninstall_declarative() -> bool:
 
 # ---------------------------------------------------------------------------
 
+#: Where each file manager loads python extensions from.
+_EXTENSION_DIRS = {
+    "nautilus": ("nautilus-python", "extensions"),
+    "nemo": ("nemo-python", "extensions"),
+    "caja": ("caja-python", "extensions"),
+}
+
+
+def _extension_source() -> str | None:
+    """Locate the shipped extension, in a source tree or an installed copy."""
+    here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    candidates = [
+        os.path.join(os.path.dirname(here), "data", "integration",
+                     "archivefree-extension.py"),
+        "/app/share/archivefree/integration/archivefree-extension.py",
+        "/usr/share/archivefree/integration/archivefree-extension.py",
+    ]
+    data_dir = os.environ.get("ARCHIVEFREE_DATA_DIR")
+    if data_dir:
+        candidates.insert(0, os.path.join(data_dir, "integration",
+                                          "archivefree-extension.py"))
+    for candidate in candidates:
+        if os.path.exists(candidate):
+            return candidate
+    return None
+
+
+def extension_host_available(manager: str) -> bool:
+    """True when this file manager can actually load python extensions.
+
+    Installing the extension where no ``*-python`` binding exists would be a
+    silent no-op, so we check before choosing it over the script fallback.
+    """
+    from .defaults import in_flatpak
+
+    roots = ["/run/host/usr/lib", "/run/host/usr/lib64"] if in_flatpak() \
+        else ["/usr/lib", "/usr/lib64", "/usr/local/lib"]
+    needle = f"lib{manager}-python"
+    for root in roots:
+        for base, _dirs, files in os.walk(root) if os.path.isdir(root) else ():
+            if any(f.startswith(needle) for f in files):
+                return True
+            # Don't crawl the whole of /usr/lib; extensions live shallow.
+            if base.count(os.sep) - root.count(os.sep) > 3:
+                _dirs[:] = []
+    return False
+
+
+def install_extension() -> bool:
+    """Install the python extension for every file manager that can load it."""
+    source = _extension_source()
+    if source is None:
+        return False
+    installed_any = False
+    for manager, (parent, child) in _EXTENSION_DIRS.items():
+        if not extension_host_available(manager):
+            continue
+        directory = os.path.join(_data_home(), parent, child)
+        try:
+            os.makedirs(directory, exist_ok=True)
+            shutil.copy2(source, os.path.join(directory, "archivefree.py"))
+            installed_any = True
+        except OSError:
+            pass
+    return installed_any
+
+
+def uninstall_extension() -> bool:
+    ok = True
+    for parent, child in _EXTENSION_DIRS.values():
+        path = os.path.join(_data_home(), parent, child, "archivefree.py")
+        try:
+            if os.path.exists(path):
+                os.unlink(path)
+        except OSError:
+            ok = False
+    return ok
+
+
 def install_all() -> dict[str, bool]:
     """Install every integration. Returns a per-target success map."""
-    return {
+    results = {
         "Thunar": install_thunar(),
         "Nemo, Dolphin, Caja and PCManFM": install_declarative(),
-        "Nautilus and Caja scripts": install_scripts(),
     }
+    # Prefer the extension: scripts get buried in a "Scripts" submenu, which
+    # people reported as impossible to find. Fall back to scripts only where no
+    # extension host is installed.
+    if install_extension():
+        results["Nautilus and Caja menus"] = True
+        uninstall_scripts()
+    else:
+        results["Nautilus and Caja scripts"] = install_scripts()
+    return results
 
 
 def uninstall_all() -> dict[str, bool]:
     return {
         "Thunar": uninstall_thunar(),
         "Nemo, Dolphin, Caja and PCManFM": uninstall_declarative(),
-        "Nautilus and Caja scripts": uninstall_scripts(),
+        "Nautilus and Caja menus": uninstall_extension() and uninstall_scripts(),
     }
 
 
@@ -429,7 +516,12 @@ def is_installed() -> bool:
             pass
     nemo = os.path.join(_data_home(), "nemo", "actions",
                         "archivefree-extract-here.nemo_action")
-    return os.path.exists(nemo)
+    if os.path.exists(nemo):
+        return True
+    return any(
+        os.path.exists(os.path.join(_data_home(), parent, child, "archivefree.py"))
+        for parent, child in _EXTENSION_DIRS.values()
+    )
 
 
 def detected_file_managers() -> list[str]:

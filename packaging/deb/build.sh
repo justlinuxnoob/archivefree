@@ -60,6 +60,10 @@ install -m 644 "$root/data/icons/hicolor/scalable/apps/$appid.svg" \
     "$staging/usr/share/icons/hicolor/scalable/apps/"
 
 # Right-click menus for the file managers that read declarative files.
+install -d "$staging/usr/share/archivefree/integration"
+install -m 644 "$root/data/integration/archivefree-extension.py" \
+    "$staging/usr/share/archivefree/integration/"
+
 install -d "$staging/usr/share/nemo/actions"
 install -m 644 "$root"/data/integration/*.nemo_action "$staging/usr/share/nemo/actions/"
 

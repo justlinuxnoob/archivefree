@@ -137,8 +137,13 @@ class ArchiveWindow(Adw.ApplicationWindow):
                                transition_duration=120)
         self.stack.add_named(self._build_welcome(), "welcome")
         self.stack.add_named(self._build_loading(), "loading")
+        # Drag entries straight out to a file manager or the desktop.
+        from .dragout import DragOutHandler
+
+        self.drag_out = DragOutHandler(self)
         self.browser = ArchiveBrowser(on_activate=self._on_node_activated,
-                                      on_selection_changed=self._update_status)
+                                      on_selection_changed=self._update_status,
+                                      on_drag_prepare=self.drag_out.prepare)
         self.stack.add_named(self.browser, "browser")
         self.stack.add_named(self._build_empty(), "empty")
         toolbar_view.set_content(self.stack)
@@ -706,6 +711,8 @@ class ArchiveWindow(Adw.ApplicationWindow):
             self._cancel_job()
         if self.backend is not None:
             self.backend.close()
+        # Temporary files staged for drag-and-drop belong to this window.
+        self.drag_out.cleanup()
         if not self.is_maximized():
             width, height = self.get_default_size()
             self.settings["window_width"] = width

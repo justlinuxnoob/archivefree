@@ -32,6 +32,9 @@ ignore = [
     # contextlib.suppress is a context-manager setup per iteration; several of
     # these sit in per-file loops where try/except is both cheaper and clearer.
     "SIM105",
+    # Several archive handles are opened conditionally and closed by a `with`
+    # on the following line; the rule cannot see across that.
+    "SIM115",
 ]
 
 [tool.ruff.lint.per-file-ignores]

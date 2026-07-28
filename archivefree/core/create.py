@@ -12,13 +12,16 @@ both slower and a worse idea.
 
 from __future__ import annotations
 
+import bz2
+import gzip
+import lzma
 import os
 import subprocess
 import tarfile
 import zipfile
 from dataclasses import dataclass
 
-from . import tools
+from . import detect, tools
 from .backends.sevenzip import _kill
 from .errors import ArchiveError, DiskFull
 from .jobs import Cancelled, Progress
@@ -76,6 +79,16 @@ CREATABLE_HINT = {
     "tar.bz2": "Older than tar.xz and slower, but understood almost everywhere.",
     "tar": "Bundles files together without compressing them. Instant, but no "
            "size saving.",
+    "tar.lz4": "Extremely fast, but compresses the least. Good for temporary "
+               "bundles you will unpack again soon.",
+    "tar.lzma": "The older form of xz. Prefer TAR.XZ unless something "
+                "specifically needs .lzma.",
+    "gz": "Compresses a single file in place. Cannot hold more than one file.",
+    "xz": "Compresses a single file, smaller than gzip but slower. "
+          "Cannot hold more than one file.",
+    "bz2": "Compresses a single file. Older than xz and usually larger.",
+    "zst": "Compresses a single file, fast and small. Needs a recent system.",
+    "lz4": "Compresses a single file extremely quickly, with modest savings.",
 }
 
 SPLIT_PRESETS = [
@@ -148,11 +161,111 @@ def create_archive(sources: list[str], options: CreateOptions,
     destination = options.destination
     os.makedirs(os.path.dirname(os.path.abspath(destination)) or ".", exist_ok=True)
 
+    if options.format in SINGLE_STREAM:
+        return _create_single_stream(sources, options, progress)
     if options.needs_sevenzip:
         return _create_with_sevenzip(sources, options, progress)
     if options.format == "zip":
         return _create_zip(sources, options, progress)
     return _create_tar(sources, options, progress)
+
+
+#: Formats that compress exactly one file with no filename table. Compressing
+#: several files this way is impossible, so the UI must steer people to tar.
+SINGLE_STREAM = ("gz", "bz2", "xz", "zst", "lz4", "lzma")
+
+
+def _create_single_stream(sources: list[str], options: CreateOptions,
+                          progress: Progress | None) -> str:
+    """Compress a single file into a bare .gz/.xz/.bz2/.zst stream.
+
+    These formats hold one nameless blob, which is why ``notes.txt.gz`` works
+    and ``photos.gz`` does not. The engine could not create them at all before,
+    even though it happily opened them.
+    """
+    real_sources = [s for s in sources if os.path.isfile(s)]
+    if len(real_sources) != 1 or len(sources) != 1:
+        raise ArchiveError(
+            f"{detect.FORMATS[options.format].label}s can only hold one file.",
+            hint="To bundle several files together, choose a TAR format "
+                 "such as TAR.GZ instead.",
+        )
+
+    source = real_sources[0]
+    fmt = options.format
+    level = options.level
+    size = _size_of(source)
+    if progress:
+        progress.begin(max(size, 1), os.path.basename(source))
+
+    temp = options.destination + ".part"
+    try:
+        if fmt in ("gz", "bz2", "xz", "lzma"):
+            opener, kwargs = {
+                "gz": (gzip.open, {"compresslevel": _GZ_LEVELS[level]}),
+                "bz2": (bz2.open, {"compresslevel": max(1, _GZ_LEVELS[level])}),
+                "xz": (lzma.open, {"preset": _XZ_LEVELS[level]}),
+                "lzma": (lzma.open, {"preset": _XZ_LEVELS[level],
+                                     "format": lzma.FORMAT_ALONE}),
+            }[fmt]
+            with open(source, "rb") as src, opener(temp, "wb", **kwargs) as dst:
+                _copy_with_progress(src, dst, progress)
+        else:
+            _compress_through_pipe(source, temp, fmt, level, progress)
+    except Cancelled:
+        _cleanup(temp)
+        raise
+    except OSError as exc:
+        _cleanup(temp)
+        raise _write_error(exc, options.destination) from exc
+
+    os.replace(temp, options.destination)
+    if progress:
+        progress.current = progress.total
+        progress.set_message("Finished")
+    return options.destination
+
+
+def _copy_with_progress(src, dst, progress: Progress | None) -> None:
+    done = 0
+    while True:
+        if progress:
+            progress.check()
+        chunk = src.read(1024 * 256)
+        if not chunk:
+            break
+        dst.write(chunk)
+        done += len(chunk)
+        if progress:
+            progress.current = min(done, progress.total)
+            progress._emit()
+
+
+def _compress_through_pipe(source: str, destination: str, fmt: str, level: str,
+                           progress: Progress | None) -> None:
+    """zstd and lz4 have no stdlib codec, so stream through their binaries."""
+    binary = {"zst": "zstd", "lz4": "lz4"}[fmt]
+    exe = tools.require(binary, f"create .{fmt} files")
+    numeric = _ZSTD_LEVELS[level] if binary == "zstd" else \
+        {"store": 1, "fast": 1, "normal": 6, "maximum": 12}[level]
+
+    with open(source, "rb") as src, open(destination, "wb") as out:
+        proc = subprocess.Popen([exe, f"-{numeric}", "-c"], stdin=subprocess.PIPE,
+                                stdout=out, stderr=subprocess.PIPE)
+        if progress:
+            progress.on_cancel(lambda: _kill(proc))
+        try:
+            _copy_with_progress(src, proc.stdin, progress)
+        finally:
+            if proc.stdin:
+                proc.stdin.close()
+            stderr = proc.stderr.read() if proc.stderr else b""
+            proc.wait()
+            if proc.stderr:
+                proc.stderr.close()
+    if proc.returncode != 0:
+        raise ArchiveError(f"The {binary} compressor failed.",
+                           detail=stderr.decode("utf-8", "replace"))
 
 
 # -- ZIP -----------------------------------------------------------------
@@ -228,6 +341,7 @@ def _create_tar(sources: list[str], options: CreateOptions,
     temp = options.destination + ".part"
     done = 0
     external = None
+    wrapper = None
 
     if fmt == "tar":
         mode, kwargs = "w", {}
@@ -237,6 +351,13 @@ def _create_tar(sources: list[str], options: CreateOptions,
         mode, kwargs = "w:bz2", {"compresslevel": max(1, _GZ_LEVELS[options.level])}
     elif fmt == "tar.xz":
         mode, kwargs = "w:xz", {"preset": _XZ_LEVELS[options.level]}
+    elif fmt == "tar.lzma":
+        # tarfile's "w:xz" mode drops any extra keyword arguments on the floor,
+        # so asking it for FORMAT_ALONE silently produced an .xz stream with an
+        # .lzma name. Build the legacy container ourselves instead.
+        wrapper = lzma.LZMAFile(temp, "wb", format=lzma.FORMAT_ALONE,
+                                preset=_XZ_LEVELS[options.level])
+        mode, kwargs = "w|", {}
     elif fmt in ("tar.zst", "tar.lz4"):
         # No stdlib codec: write an uncompressed tar into the compressor's stdin.
         external = fmt
@@ -248,7 +369,13 @@ def _create_tar(sources: list[str], options: CreateOptions,
         if external:
             _tar_through_pipe(pairs, options, external, temp, progress, total)
         else:
-            with tarfile.open(temp, mode, **kwargs) as tf:
+            # Which constructor we need depends on whether a codec wrapper is
+            # in play; the handle is closed by the `with` on the next line.
+            opened = (
+                tarfile.open(fileobj=wrapper, mode=mode, **kwargs) if wrapper
+                else tarfile.open(temp, mode, **kwargs)
+            )
+            with opened as tf:
                 for full, arcname in pairs:
                     if progress:
                         progress.check()
@@ -259,7 +386,11 @@ def _create_tar(sources: list[str], options: CreateOptions,
                     if progress:
                         progress.current = min(done, total)
                         progress._emit()
+            if wrapper is not None:
+                wrapper.close()
     except Cancelled:
+        if wrapper is not None:
+            wrapper.close()
         _cleanup(temp)
         raise
     except OSError as exc:

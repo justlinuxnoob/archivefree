@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from gi.repository import Gio, GObject, Gtk
+from gi.repository import Gdk, Gio, GObject, Gtk
 
 from ..core.tree import Node
 from .utils import describe_type, format_count, format_date, format_size, icon_name
@@ -49,10 +49,13 @@ class ArchiveBrowser(Gtk.Box):
     __gtype_name__ = "ArchiveFreeBrowser"
 
     def __init__(self, on_activate: Callable[[Node], None],
-                 on_selection_changed: Callable[[], None]):
+                 on_selection_changed: Callable[[], None],
+                 on_drag_prepare: Callable[[Node], object] | None = None):
         super().__init__(orientation=Gtk.Orientation.VERTICAL)
         self._on_activate = on_activate
         self._on_selection_changed = on_selection_changed
+        # Called with the row being dragged; returns a Gdk.ContentProvider.
+        self._on_drag_prepare = on_drag_prepare
 
         self.root: Node | None = None
         self.current: Node | None = None
@@ -74,6 +77,16 @@ class ArchiveBrowser(Gtk.Box):
         self.column_view.connect("activate", self._on_row_activated)
         self._add_columns()
 
+        # Pressing a row collapses a multi-selection down to that row before the
+        # drag source's "prepare" runs, so dragging three selected files would
+        # only ever hand over one. Snapshot the selection on the way down, while
+        # it is still intact, and let the event through untouched.
+        self._selection_at_press: list[Node] = []
+        watcher = Gtk.GestureClick(button=1)
+        watcher.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
+        watcher.connect("pressed", self._snapshot_selection)
+        self.column_view.add_controller(watcher)
+
         scroller = Gtk.ScrolledWindow(
             hscrollbar_policy=Gtk.PolicyType.AUTOMATIC,
             vscrollbar_policy=Gtk.PolicyType.AUTOMATIC,
@@ -81,6 +94,9 @@ class ArchiveBrowser(Gtk.Box):
         )
         scroller.set_child(self.column_view)
         self.append(scroller)
+
+    def _snapshot_selection(self, _gesture, _n_press, _x, _y) -> None:
+        self._selection_at_press = self.selected_nodes()
 
     # -- model plumbing --------------------------------------------------
     def _build_sort_model(self) -> Gtk.SortListModel:
@@ -154,6 +170,15 @@ class ArchiveBrowser(Gtk.Box):
             box.append(lock)
             list_item.set_child(box)
 
+            # The drag source lives on the row, not on the ColumnView. Putting
+            # it on the view makes it compete with the view's own selection
+            # gesture and clicking stops selecting anything at all.
+            if self._on_drag_prepare is not None:
+                source = Gtk.DragSource(actions=Gdk.DragAction.COPY)
+                source.connect("prepare", self._row_drag_prepare, box)
+                source.connect("drag-begin", self._row_drag_begin, box)
+                box.add_controller(source)
+
         def bind(_f, list_item: Gtk.ListItem) -> None:
             item: RowItem = list_item.get_item()
             box = list_item.get_child()
@@ -168,10 +193,44 @@ class ArchiveBrowser(Gtk.Box):
             label.set_text(item.name)
             label.set_tooltip_text(node.path)
             lock.set_visible(bool(node.encrypted))
+            # Remember which row this widget is showing, so its drag source
+            # knows what it is dragging — rows are recycled while scrolling.
+            box._af_node = node
 
         factory.connect("setup", setup)
         factory.connect("bind", bind)
         return factory
+
+    def _row_drag_prepare(self, _source: Gtk.DragSource, _x: float, _y: float,
+                          box: Gtk.Widget):
+        node = getattr(box, "_af_node", None)
+        if node is None or self._on_drag_prepare is None:
+            return None
+        return self._on_drag_prepare(node, self._selection_at_press)
+
+    def _row_drag_begin(self, source: Gtk.DragSource, _drag, box: Gtk.Widget) -> None:
+        node = getattr(box, "_af_node", None)
+        if node is None:
+            return
+        # Dragging a row that isn't selected should drag that row, so make the
+        # selection follow the cursor the way a file manager does.
+        selected = {n.path for n in self.selected_nodes()}
+        if node.path not in selected:
+            position = self._position_of(node)
+            if position is not None:
+                self.selection.select_item(position, True)
+        try:
+            paintable = Gtk.WidgetPaintable.new(box)
+            source.set_icon(paintable, 12, 12)
+        except Exception:
+            pass
+
+    def _position_of(self, node: Node) -> int | None:
+        for index in range(self.selection.get_n_items()):
+            item = self.selection.get_item(index)
+            if item is not None and item.node is node:
+                return index
+        return None
 
     def _text_factory(self, getter, align: float = 0.0, dim: bool = False,
                       numeric: bool = False) -> Gtk.SignalListItemFactory:

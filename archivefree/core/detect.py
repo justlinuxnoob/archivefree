@@ -83,7 +83,16 @@ FORMATS: dict[str, Format] = {
 }
 
 #: Formats offered in the "Create archive" dialog, in the order shown.
-CREATABLE = ["zip", "7z", "tar.gz", "tar.xz", "tar.zst", "tar.bz2", "tar"]
+#: Multi-file containers first, then the single-file compressors — those hold
+#: exactly one file, so they are only usable when one file is selected.
+CREATABLE = [
+    "zip", "7z", "tar.gz", "tar.xz", "tar.zst", "tar.bz2", "tar.lz4",
+    "tar.lzma", "tar",
+    "gz", "xz", "bz2", "zst", "lz4",
+]
+
+#: Of the above, the ones that can only ever contain a single file.
+CREATABLE_SINGLE = ["gz", "xz", "bz2", "zst", "lz4"]
 
 #: Extension list sorted longest-first so ".tar.gz" wins over ".gz".
 _EXT_INDEX: list[tuple[str, str]] = sorted(

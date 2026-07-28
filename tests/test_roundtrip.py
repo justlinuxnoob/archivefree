@@ -184,3 +184,96 @@ def test_extract_selected_folder_includes_children(sample_tree, tmp_path):
     assert (out / "docs" / "guide.md").exists()
     assert (out / "docs" / "nested" / "deep" / "deeper" / "buried.txt").exists()
     assert not (out / "readme.txt").exists()
+
+
+# -- single-file compression --------------------------------------------
+
+
+@pytest.mark.parametrize("fmt,tool", [
+    ("gz", "gzip"), ("xz", "xz"), ("bz2", "bzip2"), ("zst", "zstd"), ("lz4", "lz4"),
+])
+def test_single_stream_creation(fmt, tool, tmp_path):
+    """.gz/.xz/.bz2/.zst compress one file; verify against the system tool."""
+    if not have(tool):
+        pytest.skip(f"{tool} not installed")
+
+    source = tmp_path / "notes.txt"
+    payload = b"a line of text\n" * 2000
+    source.write_bytes(payload)
+
+    archive = str(tmp_path / f"notes.txt{detect.FORMATS[fmt].extensions[0]}")
+    create_archive([str(source)], CreateOptions(destination=archive, format=fmt))
+    assert os.path.exists(archive)
+    assert os.path.getsize(archive) < len(payload), "no compression happened"
+
+    # The system tool must be able to read what we wrote.
+    decoded = subprocess.run([tool, "-dc", archive], capture_output=True)
+    assert decoded.returncode == 0, decoded.stderr
+    assert decoded.stdout == payload
+
+    # And we must read it back ourselves, with the inner name recovered.
+    out = tmp_path / f"back-{fmt}"
+    with registry.open_archive(archive) as backend:
+        entries = backend.list_entries()
+        assert len(entries) == 1
+        assert entries[0].path == "notes.txt"
+        backend.extract(str(out))
+    assert (out / "notes.txt").read_bytes() == payload
+
+
+def test_single_stream_refuses_multiple_files(tmp_path):
+    """These formats have no filename table, so two files cannot fit."""
+    from archivefree.core.errors import ArchiveError
+
+    a = tmp_path / "one.txt"
+    b = tmp_path / "two.txt"
+    a.write_text("a")
+    b.write_text("b")
+
+    with pytest.raises(ArchiveError) as excinfo:
+        create_archive([str(a), str(b)],
+                       CreateOptions(destination=str(tmp_path / "x.gz"), format="gz"))
+    assert "one file" in excinfo.value.message
+    assert excinfo.value.hint and "TAR" in excinfo.value.hint
+
+
+def test_single_stream_refuses_a_folder(sample_tree, tmp_path):
+    from archivefree.core.errors import ArchiveError
+
+    source, _ = sample_tree
+    with pytest.raises(ArchiveError):
+        create_archive([source],
+                       CreateOptions(destination=str(tmp_path / "x.xz"), format="xz"))
+
+
+@pytest.mark.parametrize("fmt", ["tar.lz4", "tar.lzma"])
+def test_newly_offered_tar_variants_roundtrip(fmt, sample_tree, tmp_path):
+    if fmt == "tar.lz4" and not have("lz4"):
+        pytest.skip("lz4 not installed")
+    source, expected = sample_tree
+    archive = str(tmp_path / f"t{detect.FORMATS[fmt].extensions[0]}")
+    create_archive([source], CreateOptions(destination=archive, format=fmt,
+                                           base_dir=source))
+    out = tmp_path / f"out-{fmt.replace('.', '-')}"
+    with registry.open_archive(archive) as backend:
+        backend.extract(str(out))
+    compare_trees(source, str(out), expected)
+
+
+def test_every_offered_format_can_actually_be_created(sample_tree, tmp_path):
+    """The dialog must not offer something the engine will refuse."""
+    source, _ = sample_tree
+    single = set(detect.CREATABLE_SINGLE)
+    for key in detect.CREATABLE:
+        if key in single:
+            continue  # covered separately; those take one file, not a tree
+        if key == "7z" and not have("7z"):
+            continue
+        if key == "tar.zst" and not have("zstd"):
+            continue
+        if key == "tar.lz4" and not have("lz4"):
+            continue
+        archive = str(tmp_path / f"all{detect.FORMATS[key].extensions[0]}")
+        create_archive([source], CreateOptions(destination=archive, format=key,
+                                               base_dir=source))
+        assert os.path.exists(archive), f"{key} was offered but produced nothing"

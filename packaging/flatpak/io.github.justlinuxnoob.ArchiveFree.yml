@@ -49,8 +49,10 @@ modules:
   - name: archivefree
     buildsystem: simple
     build-commands:
-      - install -d /app/share/archivefree
+      - install -d /app/share/archivefree/integration
       - cp -r archivefree /app/share/archivefree/
+      - install -Dm644 data/integration/archivefree-extension.py
+        /app/share/archivefree/integration/archivefree-extension.py
       - install -Dm755 packaging/flatpak/archivefree-launcher /app/bin/archivefree
       - install -Dm644 data/io.github.justlinuxnoob.ArchiveFree.desktop
         /app/share/applications/io.github.justlinuxnoob.ArchiveFree.desktop
