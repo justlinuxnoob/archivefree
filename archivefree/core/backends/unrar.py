@@ -35,7 +35,7 @@ _PERCENT_RE = re.compile(rb"(\d{1,3})%")
 
 
 class UnrarBackend(Backend):
-    formats = ("rar",)
+    formats = ("rar", "cbr")
     priority = 50  # above SevenZipBackend (10), below the stdlib backends
 
     def __init__(self, path: str, fmt: str, password: str | None = None):
@@ -92,8 +92,8 @@ class UnrarBackend(Backend):
         volumes = detect.split_volumes(self.path)
         return ArchiveInfo(
             path=self.path,
-            format="rar",
-            format_label="RAR archive",
+            format=self.format,
+            format_label=detect.FORMATS[self.format].label,
             entry_count=sum(1 for e in entries if not e.is_dir),
             total_size=sum(e.size for e in entries if not e.is_dir),
             archive_size=sum(os.path.getsize(v) for v in volumes) if volumes

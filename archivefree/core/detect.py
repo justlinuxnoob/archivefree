@@ -79,8 +79,46 @@ FORMATS: dict[str, Format] = {
                (".squashfs", ".sqsh"), can_create=False),
         Format("z", "Compress file", "application/x-compress", (".z",),
                single_stream=True, can_create=False),
+
+        # Containers that are really a ZIP, RAR or 7z with a different name.
+        # They open through the same backends; naming them separately means the
+        # window says "Comic book archive" rather than "ZIP archive", and lets
+        # the desktop offer ArchiveFree for them.
+        Format("cbz", "Comic book archive", "application/vnd.comicbook+zip",
+               (".cbz",), can_create=False),
+        Format("cbr", "Comic book archive", "application/vnd.comicbook-rar",
+               (".cbr",), can_create=False),
+        Format("cb7", "Comic book archive", "application/x-cb7", (".cb7",),
+               can_create=False),
+        Format("epub", "EPUB e-book", "application/epub+zip", (".epub",),
+               can_create=False),
+        Format("jar", "Java archive", "application/java-archive",
+               (".jar", ".war", ".ear"), can_create=False),
+        Format("apk", "Android package", "application/vnd.android.package-archive",
+               (".apk", ".aab"), can_create=False),
+        Format("ipa", "iOS app package", "application/x-ios-app", (".ipa",),
+               can_create=False),
+        Format("whl", "Python wheel", "application/x-wheel+zip", (".whl",),
+               can_create=False),
+        Format("xpi", "Browser extension", "application/x-xpinstall",
+               (".xpi", ".crx"), can_create=False),
+        Format("ooxml", "Office document", "application/vnd.openxmlformats",
+               (".docx", ".xlsx", ".pptx"), can_create=False),
+        Format("odf", "OpenDocument file", "application/vnd.oasis.opendocument",
+               (".odt", ".ods", ".odp", ".odg"), can_create=False),
     ]
 }
+
+#: Formats that are a ZIP/RAR/7z container under a different extension. The
+#: magic bytes say "zip"; only the name distinguishes a comic from a spreadsheet.
+_ZIP_ALIASES = {
+    ".cbz": "cbz", ".epub": "epub", ".jar": "jar", ".war": "jar", ".ear": "jar",
+    ".apk": "apk", ".aab": "apk", ".ipa": "ipa", ".whl": "whl", ".xpi": "xpi",
+    ".crx": "xpi", ".docx": "ooxml", ".xlsx": "ooxml", ".pptx": "ooxml",
+    ".odt": "odf", ".ods": "odf", ".odp": "odf", ".odg": "odf",
+}
+_RAR_ALIASES = {".cbr": "cbr"}
+_SEVENZIP_ALIASES = {".cb7": "cb7"}
 
 #: Formats offered in the "Create archive" dialog, in the order shown.
 #: Multi-file containers first, then the single-file compressors — those hold
@@ -116,11 +154,11 @@ def _sniff(head: bytes, path: str) -> str | None:
         return None
 
     if head[:4] in (b"PK\x03\x04", b"PK\x05\x06", b"PK\x07\x08"):
-        return "zip"
+        return _alias(path, _ZIP_ALIASES, "zip")
     if head[:6] == b"7z\xbc\xaf\x27\x1c":
-        return "7z"
+        return _alias(path, _SEVENZIP_ALIASES, "7z")
     if head[:7] == b"Rar!\x1a\x07\x00" or head[:8] == b"Rar!\x1a\x07\x01\x00":
-        return "rar"
+        return _alias(path, _RAR_ALIASES, "rar")
     if head[:2] == b"\x1f\x8b":
         return "tar.gz" if _looks_like_tar_ext(path, ".gz") else "gz"
     if head[:3] == b"BZh":
@@ -172,6 +210,15 @@ _SHORT_TAR_FORMS = {
     ".lz4": (),
     ".lzma": (),
 }
+
+
+def _alias(path: str, aliases: dict[str, str], fallback: str) -> str:
+    """Refine a container format by its extension once the magic is confirmed."""
+    low = os.path.basename(path).lower()
+    for extension, key in aliases.items():
+        if low.endswith(extension):
+            return key
+    return fallback
 
 
 def _looks_like_tar_ext(path: str, compressed_ext: str) -> bool:

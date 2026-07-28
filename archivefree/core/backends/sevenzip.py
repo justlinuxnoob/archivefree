@@ -48,6 +48,8 @@ class SevenZipBackend(Backend):
     formats = (
         "7z", "rar", "iso", "cab", "deb", "rpm", "ar", "cpio", "lha", "arj",
         "wim", "dmg", "xar", "chm", "msi", "vhd", "squashfs", "zip", "tar",
+        "cbz", "cbr", "cb7", "epub", "jar", "apk", "ipa", "whl", "xpi",
+        "ooxml", "odf",
     )
     priority = 10  # last resort; stdlib backends outrank it
 

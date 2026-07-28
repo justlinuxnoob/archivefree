@@ -134,6 +134,9 @@ undo it any time from **Preferences → Default Archive Application**.
 | `.deb`, `.rpm`, `.cpio`, `.lha`, `.arj`, `.ar` | ✅ | — | `7zip` |
 | Password-protected zip (AES) | ✅ | ✅ | `7zip` |
 | Split / multi-part archives | ✅ | ✅ | `7zip` |
+| `.cbz`, `.cbr`, `.cb7` (comics) | ✅ | — | built in / `7zip` |
+| `.epub`, `.jar`, `.war`, `.apk`, `.whl`, `.xpi` | ✅ | — | built in |
+| `.docx`, `.xlsx`, `.odt`, `.ods` | ✅ | — | built in |
 
 **Preferences → Formats** shows which helper programs you have and what each one
 would add. If a format needs something you don't have, ArchiveFree tells you the

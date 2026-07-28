@@ -52,7 +52,25 @@ HANDLED_TYPES = [
     "application/x-xar",
     "application/x-ms-wim",
     "application/x-apple-diskimage",
+    # Comic books have no default handler on a stock desktop, so taking these
+    # over is a clear win rather than a hijack.
+    "application/vnd.comicbook+zip",
+    "application/vnd.comicbook-rar",
+    "application/x-cb7",
 ]
+
+#: Deliberately *not* in the list above. ArchiveFree can open these — they are
+#: ZIP containers — and appears under "Open With", but an .epub belongs to an
+#: e-book reader and a .docx to an office suite. Becoming the default for them
+#: would be a hijack, not a feature.
+NOT_CLAIMED_BY_DEFAULT = [
+    "application/epub+zip",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.oasis.opendocument.text",
+    "application/java-archive",
+    "application/vnd.android.package-archive",
+]
+
 
 def in_flatpak() -> bool:
     return os.path.exists("/.flatpak-info")

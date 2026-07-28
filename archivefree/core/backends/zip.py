@@ -28,7 +28,8 @@ _AES_EXTRA_ID = 0x9901
 
 
 class ZipBackend(Backend):
-    formats = ("zip",)
+    formats = ("zip", "cbz", "epub", "jar", "apk", "ipa", "whl",
+               "xpi", "ooxml", "odf")
     priority = 100
 
     def __init__(self, path: str, fmt: str, password: str | None = None):
@@ -73,10 +74,13 @@ class ZipBackend(Backend):
     def info(self) -> ArchiveInfo:
         zf = self._open()
         entries = self.list_entries()
+        from .. import detect
+
         return ArchiveInfo(
             path=self.path,
-            format="zip",
-            format_label="ZIP archive",
+            format=self.format,
+            # A .cbz and a .docx are both ZIPs; say which one the user opened.
+            format_label=detect.FORMATS[self.format].label,
             entry_count=sum(1 for e in entries if not e.is_dir),
             total_size=sum(e.size for e in entries if not e.is_dir),
             archive_size=os.path.getsize(self.path),

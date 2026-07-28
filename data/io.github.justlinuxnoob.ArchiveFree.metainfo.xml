@@ -80,6 +80,22 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
+    <release version="0.5.0" date="2026-07-28">
+      <description>
+        <p>Recognises the containers that are really a ZIP, RAR or 7z wearing a
+           different extension.</p>
+        <ul>
+          <li>Comic books (.cbz, .cbr, .cb7), e-books (.epub), Java archives
+              (.jar, .war), Android packages (.apk), Python wheels (.whl),
+              browser extensions (.xpi) and Office or OpenDocument files are
+              named properly instead of all reading "ZIP archive"</li>
+          <li>Comic books can be opened by double-clicking, since nothing else
+              on a stock desktop claims them. E-books, documents and packages
+              stay with their own applications and appear only under "Open
+              With"</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.4.0" date="2026-07-28">
       <description>
         <p>Archives can now be edited, not only read and created.</p>

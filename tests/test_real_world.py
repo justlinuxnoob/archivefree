@@ -200,3 +200,63 @@ def test_sdist_style_tarball_with_pax_headers(tmp_path):
     assert "pkg-1.0/PKG-INFO" in names
     assert not any("PaxHeader" in n for n in names), \
         f"PAX metadata leaked into the listing: {names}"
+
+
+# -- containers wearing a different extension ----------------------------
+
+
+ZIP_ALIAS_CASES = [
+    ("comic.cbz", "cbz", "Comic book archive"),
+    ("book.epub", "epub", "EPUB e-book"),
+    ("lib.jar", "jar", "Java archive"),
+    ("app.apk", "apk", "Android package"),
+    ("doc.docx", "ooxml", "Office document"),
+    ("sheet.odt", "odf", "OpenDocument file"),
+    ("pkg.whl", "whl", "Python wheel"),
+]
+
+
+@pytest.mark.parametrize("name,key,label", ZIP_ALIAS_CASES)
+def test_zip_containers_are_named_correctly(name, key, label, tmp_path):
+    """A .cbz and a .docx are both ZIPs; the window should say which."""
+    import zipfile
+
+    archive = tmp_path / name
+    with zipfile.ZipFile(archive, "w") as zf:
+        zf.writestr("content/page1.txt", "hello")
+        zf.writestr("meta.xml", "<meta/>")
+
+    assert detect.detect_format(str(archive)) == key
+
+    with registry.open_archive(str(archive)) as backend:
+        info = backend.info()
+        assert info.format_label == label
+        names = {e.path for e in backend.list_entries() if not e.is_dir}
+    assert "content/page1.txt" in names
+
+
+def test_a_plain_zip_is_still_a_plain_zip(tmp_path):
+    """The alias table must not swallow ordinary archives."""
+    import zipfile
+
+    archive = tmp_path / "ordinary.zip"
+    with zipfile.ZipFile(archive, "w") as zf:
+        zf.writestr("a.txt", "a")
+
+    assert detect.detect_format(str(archive)) == "zip"
+    with registry.open_archive(str(archive)) as backend:
+        assert backend.info().format_label == "ZIP archive"
+
+
+def test_we_do_not_hijack_documents_and_ebooks():
+    """Opening a .docx is useful; becoming its default handler is not."""
+    from archivefree.integration import defaults
+
+    for mime in ("application/epub+zip",
+                 "application/vnd.oasis.opendocument.text",
+                 "application/java-archive"):
+        assert mime not in defaults.HANDLED_TYPES, (
+            f"{mime} would be taken from its real application"
+        )
+    # Comics have no natural owner, so claiming them is a win.
+    assert "application/vnd.comicbook+zip" in defaults.HANDLED_TYPES
