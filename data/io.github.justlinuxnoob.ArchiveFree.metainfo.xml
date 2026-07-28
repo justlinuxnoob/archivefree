@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.justlinuxnoob.ArchiveFree</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+
+  <name>ArchiveFree</name>
+  <summary>Look inside archives before unpacking them</summary>
+
+  <description>
+    <p>
+      ArchiveFree opens zip, 7z, rar and tar files in a window so you can see
+      what is inside before anything is written to disk. Browse the folders,
+      check the file sizes, preview a document, and then extract everything —
+      or just the two files you actually wanted.
+    </p>
+    <p>Features:</p>
+    <ul>
+      <li>Opens zip, 7z, rar, tar (gz, bz2, xz, zst), iso, cab, deb, rpm and more</li>
+      <li>Browse the contents as folders, with sizes, types and dates</li>
+      <li>Extract everything, or only what you select, anywhere you choose</li>
+      <li>Preview text, code and images without extracting the archive</li>
+      <li>Asks before overwriting — it never silently replaces your files</li>
+      <li>Handles password-protected and multi-part archives</li>
+      <li>Create archives with a password or split into parts</li>
+      <li>Large archives never freeze the window, and every operation can be cancelled</li>
+    </ul>
+    <p>
+      No adverts, no telemetry, no accounts and no paid tiers. Free software,
+      for good.
+    </p>
+  </description>
+
+  <launchable type="desktop-id">io.github.justlinuxnoob.ArchiveFree.desktop</launchable>
+
+  <url type="homepage">https://github.com/justlinuxnoob/archivefree</url>
+  <url type="bugtracker">https://github.com/justlinuxnoob/archivefree/issues</url>
+  <url type="vcs-browser">https://github.com/justlinuxnoob/archivefree</url>
+
+  <developer id="io.github.justlinuxnoob">
+    <name>The ArchiveFree contributors</name>
+  </developer>
+
+  <supports>
+    <control>pointing</control>
+    <control>keyboard</control>
+    <control>touch</control>
+  </supports>
+
+  <requires>
+    <display_length compare="ge">360</display_length>
+  </requires>
+
+  <branding>
+    <color type="primary" scheme_preference="light">#f6c177</color>
+    <color type="primary" scheme_preference="dark">#7a4a17</color>
+  </branding>
+
+  <content_rating type="oars-1.1"/>
+
+  <releases>
+    <release version="0.1.0" date="2026-07-28">
+      <description>
+        <p>First public release.</p>
+        <ul>
+          <li>Browse and extract zip, 7z, rar, tar and single-stream archives</li>
+          <li>Create zip, 7z and tar archives, optionally with a password or split into parts</li>
+          <li>One-click, reversible option to become the default archive application</li>
+        </ul>
+      </description>
+    </release>
+  </releases>
+</component>

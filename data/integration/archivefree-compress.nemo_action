@@ -1,0 +1,8 @@
+[Nemo Action]
+Name=Compress with ArchiveFree…
+Comment=Create a new archive from the selected items
+Exec=archivefree --new-archive %F
+Icon-Name=io.github.justlinuxnoob.ArchiveFree
+Selection=NotNone
+Extensions=any;
+Quote=double

@@ -1,0 +1,33 @@
+name: Feature request
+description: Suggest something ArchiveFree should do
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: >
+        Describe the situation rather than the solution — it often turns out
+        there's a better fix than the one we'd have guessed.
+      placeholder: >
+        I regularly get archives split across a dozen parts and I can never
+        tell whether I've downloaded them all.
+    validations:
+      required: true
+
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would you like it to do?
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: How do you handle it today?
+      description: Another application, a terminal command, or just putting up with it.
+
+  - type: markdown
+    attributes:
+      value: |
+        **Please note:** adverts, telemetry, accounts and paid tiers are
+        permanently out of scope. Everything else is fair game.

@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <defs>
+    <linearGradient id="box" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f6c177"/>
+      <stop offset="1" stop-color="#e08a3c"/>
+    </linearGradient>
+    <linearGradient id="lid" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffd9a0"/>
+      <stop offset="1" stop-color="#f2ab5c"/>
+    </linearGradient>
+    <linearGradient id="paper" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#dfe6f2"/>
+    </linearGradient>
+    <filter id="soft" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-opacity="0.28"/>
+    </filter>
+  </defs>
+
+  <!-- The open box: the app's whole idea is that you see inside first. -->
+  <g filter="url(#soft)">
+    <!-- Sheet of contents lifted out of the box -->
+    <g transform="rotate(-7 64 44)">
+      <rect x="38" y="12" width="52" height="46" rx="4" fill="url(#paper)"/>
+      <rect x="45" y="22" width="30" height="4" rx="2" fill="#8fa3c4"/>
+      <rect x="45" y="31" width="38" height="4" rx="2" fill="#b6c3d9"/>
+      <rect x="45" y="40" width="24" height="4" rx="2" fill="#b6c3d9"/>
+    </g>
+
+    <!-- Box body -->
+    <path d="M20 58 L64 76 L108 58 L108 100 A6 6 0 0 1 104 106 L64 122 L24 106 A6 6 0 0 1 20 100 Z"
+          fill="url(#box)"/>
+    <!-- Front face shading so the box reads as three-dimensional -->
+    <path d="M64 76 L108 58 L108 100 A6 6 0 0 1 104 106 L64 122 Z"
+          fill="#000000" opacity="0.12"/>
+
+    <!-- Open flaps -->
+    <path d="M20 58 L44 46 L64 76 Z" fill="url(#lid)"/>
+    <path d="M108 58 L84 46 L64 76 Z" fill="url(#lid)"/>
+    <path d="M108 58 L84 46 L64 76 Z" fill="#000000" opacity="0.08"/>
+
+    <!-- Centre seam -->
+    <path d="M64 76 L64 122" stroke="#a45f1e" stroke-opacity="0.35" stroke-width="2"/>
+  </g>
+</svg>

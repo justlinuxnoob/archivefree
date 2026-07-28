@@ -1,0 +1,22 @@
+[Desktop Entry]
+Type=Service
+ServiceTypes=KonqPopupMenu/Plugin
+MimeType=application/zip;application/x-7z-compressed;application/vnd.rar;application/x-tar;application/gzip;application/x-compressed-tar;application/x-bzip2;application/x-bzip-compressed-tar;application/x-bzip2-compressed-tar;application/x-xz;application/x-xz-compressed-tar;application/zstd;application/x-zstd-compressed-tar;application/x-cd-image;application/vnd.ms-cab-compressed;
+Actions=archivefreeOpen;archivefreeExtractHere;archivefreeExtractTo;
+X-KDE-Priority=TopLevel
+Icon=io.github.justlinuxnoob.ArchiveFree
+
+[Desktop Action archivefreeOpen]
+Name=Open with ArchiveFree
+Icon=io.github.justlinuxnoob.ArchiveFree
+Exec=archivefree %F
+
+[Desktop Action archivefreeExtractHere]
+Name=Extract Here
+Icon=archive-extract
+Exec=archivefree --extract-here %F
+
+[Desktop Action archivefreeExtractTo]
+Name=Extract To…
+Icon=archive-extract
+Exec=archivefree %F

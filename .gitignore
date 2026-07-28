@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.venv/
+
+# Build output
+/dist/
+/build-dir/
+/repo/
+/.flatpak-builder/
+*.deb
+*.flatpak
+
+# Local development helpers
+/.devtypelib/
+/.devtest.sh

@@ -1,0 +1,8 @@
+[Nemo Action]
+Name=Extract Here with ArchiveFree
+Comment=Extract this archive into a folder beside it
+Exec=archivefree --extract-here %F
+Icon-Name=io.github.justlinuxnoob.ArchiveFree
+Selection=NotNone
+Extensions=zip;7z;rar;tar;gz;tgz;bz2;tbz2;xz;txz;zst;tzst;iso;cab;lzma;lz4;
+Quote=double

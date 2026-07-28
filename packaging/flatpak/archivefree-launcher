@@ -1,0 +1,8 @@
+#!/bin/sh
+# ArchiveFree launcher for the Flatpak build.
+#
+# -m is required rather than a path: archivefree/__main__.py uses relative
+# imports, which only resolve when Python loads it as part of the package.
+PYTHONPATH="/app/share/archivefree${PYTHONPATH:+:$PYTHONPATH}"
+export PYTHONPATH
+exec python3 -m archivefree "$@"

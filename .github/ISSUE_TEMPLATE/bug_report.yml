@@ -1,0 +1,82 @@
+name: Bug report
+description: Something didn't work the way it should
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. You don't need to fill in every field — the more
+        you can give, the faster this gets fixed, but a short report is much
+        better than no report.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you do, and what did ArchiveFree do instead of what you expected?
+      placeholder: |
+        I opened a 2 GB zip that came from Windows, clicked Extract, and it
+        stopped at about 40% with an error.
+    validations:
+      required: true
+
+  - type: textarea
+    id: error
+    attributes:
+      label: The exact message
+      description: >
+        Copy the message ArchiveFree showed, including anything under
+        "Technical details" if there was an expander.
+      render: text
+
+  - type: input
+    id: file-type
+    attributes:
+      label: What kind of file was it?
+      description: >
+        If it involves a particular archive, run `file yourarchive.zip` in a
+        terminal and paste the output. You don't need to attach the file.
+      placeholder: "photos.zip: Zip archive data, at least v2.0 to extract"
+
+  - type: dropdown
+    id: install-method
+    attributes:
+      label: How did you install ArchiveFree?
+      options:
+        - .deb package
+        - Flatpak
+        - Built from source
+        - Not sure
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: "From the main menu: About ArchiveFree. Or run `archivefree --version`."
+      placeholder: "0.1.0"
+
+  - type: input
+    id: distro
+    attributes:
+      label: Which Linux, and which desktop?
+      placeholder: "MX Linux 23 / XFCE, or Ubuntu 24.04 / GNOME"
+
+  - type: textarea
+    id: debug
+    attributes:
+      label: Debug information (optional)
+      description: >
+        In the app: main menu → About ArchiveFree → Troubleshooting → Debug
+        Information. This tells us your GTK and 7-Zip versions, which explains
+        a surprising number of bugs.
+      render: text
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched the existing issues and this doesn't look like a duplicate
+          required: false

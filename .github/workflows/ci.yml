@@ -1,0 +1,126 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Tests (Python ${{ matrix.python }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.11', '3.12', '3.13']
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install archive tools
+        # The suite cross-checks our output against these, so they are not
+        # optional — without them the interesting assertions would just skip.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            p7zip-full zip unzip zstd lz4 xz-utils bzip2
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Install test dependencies
+        run: python -m pip install --upgrade pytest
+
+      - name: Run tests
+        # The core is deliberately free of GTK imports, so it tests headless.
+        run: python -m pytest tests/ -v --tb=short
+
+  gui-imports:
+    name: GUI imports cleanly
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install GTK 4 and libadwaita
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            python3-gi gir1.2-gtk-4.0 gir1.2-adw-1 libgtk-4-1 libadwaita-1-0 \
+            xvfb p7zip-full
+
+      - name: Import every UI module
+        # Catches typos and bad GI attribute names that unit tests can't reach,
+        # which is exactly the class of bug that only shows up at runtime.
+        run: |
+          xvfb-run -a python3 - <<'PY'
+          import importlib
+          modules = [
+              "archivefree.app", "archivefree.config",
+              "archivefree.ui.window", "archivefree.ui.browser",
+              "archivefree.ui.dialogs", "archivefree.ui.extract",
+              "archivefree.ui.create", "archivefree.ui.preview",
+              "archivefree.ui.progress", "archivefree.ui.properties",
+              "archivefree.ui.shortcuts", "archivefree.ui.welcome",
+              "archivefree.ui.utils",
+              "archivefree.integration.defaults",
+              "archivefree.integration.filemanagers",
+          ]
+          import gi
+          gi.require_version("Gtk", "4.0")
+          gi.require_version("Adw", "1")
+          for name in modules:
+              importlib.import_module(name)
+              print("ok", name)
+          PY
+
+      - name: Launch smoke test
+        run: xvfb-run -a python3 -m archivefree --version
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install ruff
+      - run: ruff check archivefree tests
+
+  packaging:
+    name: Validate packaging metadata
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install validators
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            desktop-file-utils appstream lintian
+
+      - name: Validate the desktop entry
+        run: |
+          desktop-file-validate \
+            data/io.github.justlinuxnoob.ArchiveFree.desktop
+
+      - name: Validate the AppStream metadata
+        run: |
+          appstreamcli validate --no-net --explain \
+            data/io.github.justlinuxnoob.ArchiveFree.metainfo.xml
+
+      - name: Build the .deb
+        run: packaging/deb/build.sh
+
+      - name: Check the .deb installs and runs
+        run: |
+          sudo apt-get install -y ./dist/archivefree_*_all.deb
+          archivefree --version
+          test -x /usr/bin/archivefree
+          # The association must survive a real install, not just our tests.
+          sudo apt-get remove -y archivefree

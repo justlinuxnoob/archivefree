@@ -1,0 +1,10 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Question or general discussion
+    url: https://github.com/justlinuxnoob/archivefree/discussions
+    about: Ask how something works, or suggest an idea before filing an issue.
+  - name: A format needs a helper program
+    url: https://github.com/justlinuxnoob/archivefree#formats
+    about: >
+      7z, RAR and ISO need the 7zip package. Check Preferences → Formats in the
+      app to see what you have installed.

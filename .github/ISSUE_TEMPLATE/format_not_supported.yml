@@ -1,0 +1,66 @@
+name: An archive wouldn't open
+description: ArchiveFree couldn't open a file you think it should handle
+labels: [format-support]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        These are the most useful reports we get. Format coverage is the whole
+        job of an archive manager, and files from the real world find problems
+        that our own test archives never do.
+
+  - type: input
+    id: file-command
+    attributes:
+      label: What does `file` say about it?
+      description: "Run `file yourarchive.xyz` in a terminal and paste the whole line."
+      placeholder: "backup.rar: RAR archive data, v5"
+    validations:
+      required: true
+
+  - type: textarea
+    id: error
+    attributes:
+      label: What did ArchiveFree say?
+      description: Include anything under "Technical details".
+      render: text
+    validations:
+      required: true
+
+  - type: textarea
+    id: other-tools
+    attributes:
+      label: Can another tool open it?
+      description: >
+        Try `7z l yourarchive.xyz` or `unzip -t yourarchive.zip` and paste the
+        result. If another tool also fails, the archive itself may be damaged —
+        which is still worth reporting, because we should say so clearly rather
+        than showing a confusing error.
+      render: text
+
+  - type: input
+    id: origin
+    attributes:
+      label: Where did the archive come from?
+      description: >
+        Knowing what produced it often identifies the quirk immediately.
+      placeholder: "Made by WinRAR on Windows 11 / downloaded from a game mod site"
+
+  - type: dropdown
+    id: install-method
+    attributes:
+      label: How did you install ArchiveFree?
+      options:
+        - .deb package
+        - Flatpak
+        - Built from source
+        - Not sure
+    validations:
+      required: true
+
+  - type: markdown
+    attributes:
+      value: |
+        **A note on helper programs:** some formats need `7zip` installed.
+        Check **Preferences → Formats** in the app — it lists what you have and
+        what each missing program would add.
