@@ -51,6 +51,23 @@ class FirstRunDialog(Adw.Dialog):
                 "be switched back at any time in Preferences."
             ),
         )
+        # Thunar and Nautilus keep their menu configuration per user, so a
+        # system package cannot install these for you — it has to be offered
+        # here or most people will never find it.
+        from ..integration import filemanagers
+
+        detected = filemanagers.detected_file_managers()
+        self.menus_row = Adw.SwitchRow(
+            title="Add right-click menu entries",
+            subtitle=(
+                f"“Extract Here” and “Compress…” in {detected[0]}"
+                if len(detected) == 1 else
+                "“Extract Here” and “Compress…” in your file manager"
+            ),
+            active=True,
+        )
+        action_group.add(self.menus_row)
+
         self.result_row = Adw.ActionRow(visible=False)
         action_group.add(self.result_row)
         page.add(action_group)
@@ -79,18 +96,31 @@ class FirstRunDialog(Adw.Dialog):
         self.settings["default_handler_offered"] = True
         self.settings["first_run_completed"] = True
 
+        menus_added = False
+        if self.menus_row.get_active():
+            from ..integration import filemanagers
+
+            menus_added = any(filemanagers.install_all().values())
+        self.menus_row.set_sensitive(False)
+
+        extra = (
+            " Right-click entries were added — restart your file manager to see them."
+            if menus_added else ""
+        )
+
         if changed and not warnings:
-            self._finish(f"{APP_NAME} now opens archive files.", "emblem-ok-symbolic")
+            self._finish(f"{APP_NAME} now opens archive files.{extra}",
+                         "emblem-ok-symbolic")
         elif changed:
             self._finish(
                 f"{APP_NAME} now opens most archive files. "
-                f"{len(warnings)} type(s) couldn’t be changed.",
+                f"{len(warnings)} type(s) couldn’t be changed.{extra}",
                 "dialog-warning-symbolic",
             )
         else:
             self._finish(
                 "Your desktop wouldn’t let that setting change. "
-                "You can still set it from your file manager’s “Open With” menu.",
+                f"You can still set it from your file manager’s “Open With” menu.{extra}",
                 "dialog-warning-symbolic",
             )
 

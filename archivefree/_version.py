@@ -1,3 +1,3 @@
-__version__ = "0.1.2"
+__version__ = "0.1.3"
 APP_ID = "io.github.justlinuxnoob.ArchiveFree"
 APP_NAME = "ArchiveFree"

@@ -80,6 +80,20 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
+    <release version="0.1.3" date="2026-07-28">
+      <description>
+        <p>Works properly outside Debian-based distributions.</p>
+        <ul>
+          <li>Install advice for missing helper programs now matches the
+              distribution — dnf on Fedora, pacman on Arch, zypper on openSUSE —
+              with the correct package name for each. It previously told
+              everyone to run an apt command</li>
+          <li>The first run offers to add right-click menu entries, naming the
+              file manager it found. Thunar and Nautilus store this per user, so
+              a system package cannot set it up for you</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.1.2" date="2026-07-28">
       <description>
         <p>Fixes the right-click menu on XFCE.</p>

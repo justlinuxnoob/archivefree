@@ -41,7 +41,13 @@ class MissingTool(ArchiveError):
     def __init__(self, tool: str, purpose: str, packages: str | None = None):
         message = (f"ArchiveFree needs the “{tool}” program to {purpose}, "
                    "but it isn’t installed.")
-        hint = f"Install it with:  sudo apt install {packages}" if packages else None
+        # The install command is resolved per distribution: an apt command shown
+        # on Fedora turns the one actionable error in this app into a dead end.
+        from . import distro
+
+        hint = distro.install_hint(tool)
+        if hint is None and packages:
+            hint = f"Install the “{packages}” package."
         super().__init__(message, hint=hint)
         self.tool = tool
 
