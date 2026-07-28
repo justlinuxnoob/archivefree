@@ -255,13 +255,12 @@ def _is_symlink(zi: zipfile.ZipInfo) -> bool:
 
 
 def _write_symlink(destination: str, target: str, link_target: str) -> None:
-    """Create a symlink, refusing ones that would point outside the destination."""
-    from ..errors import UnsafePath
+    """Create a symlink, whatever it points at.
 
-    root = os.path.realpath(destination)
-    resolved = os.path.realpath(os.path.join(os.path.dirname(target), link_target))
-    if resolved != root and not resolved.startswith(root + os.sep):
-        raise UnsafePath(f"{os.path.basename(target)} -> {link_target}")
+    See the note in the tar backend: the link itself is inert, and writes
+    *through* a link are what must be blocked — which ``safe_join`` already
+    does by resolving every write against the destination root.
+    """
     if os.path.lexists(target):
         os.unlink(target)
     os.symlink(link_target, target)

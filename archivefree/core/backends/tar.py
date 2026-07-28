@@ -368,12 +368,20 @@ def _remove(path: str) -> None:
 
 
 def _safe_symlink(destination: str, target: str, link_target: str) -> None:
-    from ..errors import UnsafePath
+    """Create a symlink, whatever it points at.
 
-    root = os.path.realpath(destination)
-    resolved = os.path.realpath(os.path.join(os.path.dirname(target), link_target))
-    if resolved != root and not resolved.startswith(root + os.sep):
-        raise UnsafePath(f"{os.path.basename(target)} -> {link_target}")
+    Refusing links that point outside the destination sounds safe but is wrong,
+    and it broke every root filesystem tarball and container layer: those are
+    *full* of absolute links like ``/bin/sh -> /bin/busybox``, which is simply
+    how a rootfs is built. GNU tar and every container runtime create them.
+
+    A symlink is inert on its own — it is just a name. The attack is a *later*
+    archive member writing *through* it to escape the destination, and that is
+    blocked independently: :meth:`Backend.safe_join` resolves the real path of
+    every write, so an entry like ``link/passwd`` where ``link -> /etc``
+    resolves outside the root and is refused there. Guarding the link itself
+    adds nothing and costs correctness.
+    """
     if os.path.lexists(target):
         _remove(target)
     os.symlink(link_target, target)

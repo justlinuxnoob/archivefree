@@ -80,6 +80,25 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
+    <release version="0.3.0" date="2026-07-28">
+      <description>
+        <p>Fixes found by testing against genuine archives downloaded from the
+           internet, plus faster compression.</p>
+        <ul>
+          <li>A compressed tar whose name doesn't say "tar" — a rootfs saved as
+              .iso, say — is now recognised by looking inside it. It previously
+              appeared as one opaque blob instead of hundreds of files</li>
+          <li>Debian packages listed nothing at all, because 7-Zip descends into
+              the inner tar and reports that instead</li>
+          <li>Root filesystem tarballs and container layers extract again.
+              Absolute symlinks like /bin/sh are normal in those and were being
+              refused; writing *through* a symlink is still blocked, which is
+              the attack that actually matters</li>
+          <li>XZ compression now uses every CPU core: a 124 MB archive went from
+              141 seconds to 82 on four cores, for identical output</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.2.1" date="2026-07-28">
       <description>
         <p>Fixes drag-to-extract in the Flatpak build.</p>

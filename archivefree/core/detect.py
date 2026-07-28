@@ -175,21 +175,64 @@ _SHORT_TAR_FORMS = {
 
 
 def _looks_like_tar_ext(path: str, compressed_ext: str) -> bool:
-    """Decide if a compressed stream wraps a tar, based on the filename.
+    """Decide if a compressed stream wraps a tar.
 
-    We can't know for certain without decompressing, and decompressing a 4 GB
-    .gz just to check is exactly the sluggishness this app exists to avoid. The
-    filename is right in practice, and the tar backend falls back to treating
-    the stream as a single file if the tar header turns out to be bogus.
+    The filename answers this most of the time and costs nothing, so it is
+    tried first. When it doesn't — a tarball saved as ``rootfs.iso``, or with
+    the extension stripped entirely by a download — we decompress the first few
+    hundred bytes and look for the tar signature. That is bounded work: we stop
+    after one tar header regardless of whether the archive is 4 KB or 4 GB.
     """
     low = path.lower()
     # Short forms are checked first: "bundle.tgz" is a tar.gz but does not end
     # in ".gz" at all, so the long-form test below would never see it.
     if any(low.endswith(short) for short in _SHORT_TAR_FORMS.get(compressed_ext, ())):
         return True
-    if not low.endswith(compressed_ext):
+    if low.endswith(compressed_ext) and low[: -len(compressed_ext)].endswith(".tar"):
+        return True
+    return _stream_starts_with_tar(path, compressed_ext)
+
+
+#: The tar signature sits at offset 257, so we need this much decompressed.
+_TAR_PROBE_BYTES = 263
+
+
+def _stream_starts_with_tar(path: str, compressed_ext: str) -> bool:
+    """Decompress just enough of the stream to see whether a tar is inside."""
+    opener = {
+        ".gz": _open_gzip,
+        ".bz2": _open_bzip2,
+        ".xz": _open_xz,
+        ".lzma": _open_xz,
+    }.get(compressed_ext)
+    if opener is None:
+        # zstd and lz4 would need their external tools; the filename is all we
+        # have, and mislabelled files in those formats are vanishingly rare.
         return False
-    return low[: -len(compressed_ext)].endswith(".tar")
+    try:
+        with opener(path) as stream:
+            head = stream.read(_TAR_PROBE_BYTES)
+    except Exception:
+        return False
+    return len(head) >= _TAR_PROBE_BYTES and head[257:262] in (b"ustar",)
+
+
+def _open_gzip(path: str):
+    import gzip
+
+    return gzip.open(path, "rb")
+
+
+def _open_bzip2(path: str):
+    import bz2
+
+    return bz2.open(path, "rb")
+
+
+def _open_xz(path: str):
+    import lzma
+
+    return lzma.open(path, "rb")
 
 
 def _iso_check(fh) -> bool:

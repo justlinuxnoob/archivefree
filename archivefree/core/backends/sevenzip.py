@@ -56,6 +56,10 @@ class SevenZipBackend(Backend):
         self._entries: list[ArchiveEntry] | None = None
         self._info: ArchiveInfo | None = None
         self._volumes: list[str] | None = None
+        #: Set when 7-Zip had to be told the container type explicitly; every
+        #: later command must pass the same one or it recurses into a nested
+        #: archive and operates on the wrong layer.
+        self._type_override: str | None = None
 
     @classmethod
     def is_available(cls) -> bool:
@@ -69,6 +73,9 @@ class SevenZipBackend(Backend):
     def _exe(self) -> str:
         return tools.require("7z", f"open {detect.FORMATS[self.format].label} files")
 
+    def _type_args(self) -> list[str]:
+        return [f"-t{self._type_override}"] if self._type_override else []
+
     def _password_args(self) -> list[str]:
         # An empty -p turns an interactive prompt into a clean error.
         return [f"-p{self.password}" if self.password else "-p"]
@@ -77,7 +84,7 @@ class SevenZipBackend(Backend):
              capture_stdout: bool = True) -> subprocess.CompletedProcess:
         # Note: no -bse1 here. That flag folds errors into stdout, which would
         # leave stderr empty and make every failure look like a generic one.
-        argv = [self._exe(), *args, "-y", *self._password_args()]
+        argv = [self._exe(), *args, *self._type_args(), "-y", *self._password_args()]
         proc = subprocess.Popen(
             argv,
             stdout=subprocess.PIPE if capture_stdout else subprocess.DEVNULL,
@@ -97,7 +104,8 @@ class SevenZipBackend(Backend):
 
     def _run_streaming(self, args: list[str], progress: Progress, weight: int) -> None:
         """Run 7-Zip with percentage progress piped back to the UI."""
-        argv = [self._exe(), *args, "-y", "-bsp1", *self._password_args()]
+        argv = [self._exe(), *args, *self._type_args(), "-y", "-bsp1",
+                *self._password_args()]
         proc = subprocess.Popen(
             argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             stdin=subprocess.DEVNULL, bufsize=0,
@@ -199,7 +207,26 @@ class SevenZipBackend(Backend):
         if result.returncode != 0:
             raise self._translate(result.returncode, _diagnostics(result.stdout, result.stderr))
 
-        entries, encrypted_any = _parse_slt(result.stdout.decode("utf-8", "replace"))
+        text = result.stdout.decode("utf-8", "replace")
+        entries, encrypted_any = _parse_slt(text)
+
+        # 7-Zip descends into nested containers on its own: listing a .deb makes
+        # it open the data.tar.xz inside and report *that* archive's contents,
+        # whose entries carry no Path at all. The result is an empty listing for
+        # a perfectly good package. Pinning the outer type stops the recursion.
+        if not entries:
+            outer = _outer_type(text)
+            if outer:
+                retry = self._run(["l", "-slt", f"-t{outer}", self.path],
+                                  progress=progress)
+                if retry.returncode == 0:
+                    parsed, encrypted_any = _parse_slt(
+                        retry.stdout.decode("utf-8", "replace"))
+                    if parsed:
+                        entries = parsed
+                        # Remember it: extraction has to pin the same type or
+                        # 7-Zip descends again and unpacks the wrong layer.
+                        self._type_override = outer
         volumes = detect.split_volumes(self.path)
 
         self._entries = entries
@@ -218,7 +245,7 @@ class SevenZipBackend(Backend):
 
     def read_member(self, entry: ArchiveEntry, limit: int = 4 * 1024 * 1024) -> bytes:
         argv = [self._exe(), "x", "-so", self.path, entry.path,
-                "-y", "-bso0", "-bse1", *self._password_args()]
+                *self._type_args(), "-y", "-bso0", "-bse1", *self._password_args()]
         proc = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                 stdin=subprocess.DEVNULL)
         try:
@@ -372,6 +399,20 @@ def _parse_slt(text: str) -> tuple[list[ArchiveEntry], bool]:
             )
         )
     return entries, encrypted_any
+
+
+def _outer_type(text: str) -> str | None:
+    """The 7-Zip type name of the outermost archive, e.g. "Ar" for a .deb.
+
+    Taken from the header block, before any nested archive is described.
+    """
+    header = text.split("\n----------\n", 1)[0]
+    for line in header.splitlines():
+        key, sep, value = line.partition(" = ")
+        if sep and key.strip() == "Type":
+            name = value.strip().lower()
+            return name or None
+    return None
 
 
 def _int(value: str | None) -> int:

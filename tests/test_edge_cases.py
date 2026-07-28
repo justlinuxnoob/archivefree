@@ -197,18 +197,55 @@ def test_absolute_paths_are_neutralised():
     assert normalise_path("./foo/./bar") == "foo/bar"
 
 
-def test_symlink_escape_is_blocked(tmp_path):
-    """A symlink pointing outside the destination must be refused."""
+def test_absolute_symlinks_are_extracted(tmp_path):
+    """A link pointing outside is inert and must not be refused.
+
+    Every root filesystem tarball and container layer is full of these —
+    /bin/sh -> /bin/busybox and the like. Rejecting them made ArchiveFree
+    unable to open an ordinary Alpine minirootfs.
+    """
     archive = tmp_path / "link.tar"
     staging = tmp_path / "staging"
     staging.mkdir()
-    os.symlink("/etc/passwd", staging / "escape")
+    os.symlink("/bin/busybox", staging / "sh")
     subprocess.run(["tar", "-cf", str(archive), "-C", str(staging), "."], check=True)
 
     out = tmp_path / "linkdest"
+    with registry.open_archive(str(archive)) as backend:
+        backend.extract(str(out))
+    assert os.path.islink(out / "sh")
+    assert os.readlink(out / "sh") == "/bin/busybox"
+
+
+def test_writing_through_a_symlink_is_blocked(tmp_path):
+    """The real attack: a link, then an entry that writes through it.
+
+    This is what the guard is actually for. The link itself is harmless; the
+    following member trying to land outside the destination is not.
+    """
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "keep.txt").write_text("ORIGINAL")
+
+    archive = tmp_path / "attack.tar"
+    staging = tmp_path / "staging"
+    staging.mkdir()
+    os.symlink(str(outside), staging / "escape")
+    subprocess.run(["tar", "-cf", str(archive), "-C", str(staging), "escape"],
+                   check=True)
+
+    payload = tmp_path / "payload"
+    (payload / "escape").mkdir(parents=True)
+    (payload / "escape" / "keep.txt").write_text("PWNED")
+    subprocess.run(["tar", "-rf", str(archive), "-C", str(payload),
+                    "escape/keep.txt"], check=True)
+
+    out = tmp_path / "dest"
     with registry.open_archive(str(archive)) as backend, pytest.raises(UnsafePath):
         backend.extract(str(out))
-    assert not os.path.lexists(out / "escape") or not os.path.exists(out / "escape")
+
+    assert (outside / "keep.txt").read_text() == "ORIGINAL", \
+        "an archive wrote through a symlink and escaped the destination"
 
 
 # -- collisions ----------------------------------------------------------
