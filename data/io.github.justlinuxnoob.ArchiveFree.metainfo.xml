@@ -80,6 +80,19 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
+    <release version="0.1.2" date="2026-07-28">
+      <description>
+        <p>Fixes the right-click menu on XFCE.</p>
+        <ul>
+          <li>Thunar's custom-action file uses a non-standard XML declaration that
+              Python refused to parse, so the right-click entries silently failed to
+              install on XFCE — the desktop where they matter most</li>
+          <li>Menu entries now name ArchiveFree, so they are distinguishable from
+              the archive plugin's own "Extract Here"</li>
+          <li>The settings page can see the host's file managers from inside the Flatpak</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.1.1" date="2026-07-28">
       <description>
         <p>Bug fixes found by an expanded test suite.</p>

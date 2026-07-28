@@ -18,6 +18,8 @@ most people this is only needed for Thunar and Nautilus.
 from __future__ import annotations
 
 import os
+import re
+import shutil
 import stat
 import xml.etree.ElementTree as ET
 
@@ -83,7 +85,7 @@ _THUNAR_ACTIONS = [
     },
     {
         "unique-id": _UNIQUE_PREFIX + "extract-here",
-        "name": "Extract Here",
+        "name": "Extract Here with ArchiveFree",
         "description": "Extract this archive into a folder beside it",
         "icon": "archive-extract",
         "command": "{cmd} --extract-here %F",
@@ -92,7 +94,7 @@ _THUNAR_ACTIONS = [
     },
     {
         "unique-id": _UNIQUE_PREFIX + "compress",
-        "name": "Compress…",
+        "name": "Compress with ArchiveFree…",
         "description": "Create a new archive from the selected items",
         "icon": APP_ID,
         "command": "{cmd} --new-archive %F",
@@ -109,17 +111,57 @@ def thunar_available() -> bool:
     return shutil.which("thunar") is not None
 
 
+#: Thunar writes its declaration with the attributes the wrong way round —
+#: `<?xml encoding="UTF-8" version="1.0"?>`. The XML spec requires `version`
+#: first, so Python's parser rejects a file Thunar itself reads happily. Every
+#: XFCE user with existing custom actions has one of these.
+_THUNAR_DECLARATION = b'<?xml encoding="UTF-8" version="1.0"?>\n'
+
+
+def _read_uca(path: str) -> ET.Element:
+    """Parse Thunar's uca.xml, tolerating its non-conforming XML declaration."""
+    with open(path, "rb") as fh:
+        data = fh.read()
+    try:
+        return ET.fromstring(data)
+    except ET.ParseError:
+        # Drop the declaration entirely and let the parser assume UTF-8, which
+        # is what the declaration claimed anyway.
+        stripped = re.sub(rb"^\s*<\?xml[^>]*\?>", b"", data, count=1)
+        return ET.fromstring(stripped)
+
+
+def _write_uca(root: ET.Element, path: str) -> None:
+    """Write uca.xml back in Thunar's own dialect.
+
+    We deliberately reproduce Thunar's malformed declaration rather than
+    "correcting" it: Thunar rewrites this file whenever the user edits an action
+    in its own dialog, and matching what it writes keeps round-trips stable.
+    """
+    _indent(root)
+    body = ET.tostring(root, encoding="UTF-8", xml_declaration=False)
+    temp = path + ".archivefree-tmp"
+    with open(temp, "wb") as fh:
+        fh.write(_THUNAR_DECLARATION)
+        fh.write(body)
+        fh.write(b"\n")
+    os.replace(temp, path)
+
+
 def install_thunar() -> bool:
     """Merge our actions into Thunar's uca.xml, leaving the user's own alone."""
     path = os.path.join(_config_home(), "Thunar", "uca.xml")
     try:
         os.makedirs(os.path.dirname(path), exist_ok=True)
         if os.path.exists(path):
-            tree = ET.parse(path)
-            root = tree.getroot()
+            # Back up before touching a file that may hold actions the user
+            # spent time creating.
+            backup = path + ".archivefree-backup"
+            if not os.path.exists(backup):
+                shutil.copy2(path, backup)
+            root = _read_uca(path)
         else:
             root = ET.Element("actions")
-            tree = ET.ElementTree(root)
 
         # Drop any previous version of our entries so re-running is idempotent.
         for action in list(root.findall("action")):
@@ -139,8 +181,7 @@ def install_thunar() -> bool:
             for kind in spec["types"]:
                 ET.SubElement(action, kind)
 
-        _indent(root)
-        tree.write(path, encoding="UTF-8", xml_declaration=True)
+        _write_uca(root, path)
         return True
     except (OSError, ET.ParseError):
         return False
@@ -151,16 +192,14 @@ def uninstall_thunar() -> bool:
     if not os.path.exists(path):
         return True
     try:
-        tree = ET.parse(path)
-        root = tree.getroot()
+        root = _read_uca(path)
         removed = False
         for action in list(root.findall("action")):
             if action.findtext("unique-id", "").startswith(_UNIQUE_PREFIX):
                 root.remove(action)
                 removed = True
         if removed:
-            _indent(root)
-            tree.write(path, encoding="UTF-8", xml_declaration=True)
+            _write_uca(root, path)
         return True
     except (OSError, ET.ParseError):
         return False
@@ -394,13 +433,22 @@ def is_installed() -> bool:
 
 
 def detected_file_managers() -> list[str]:
-    """Which file managers are actually installed, for an honest settings page."""
-    import shutil
+    """Which file managers are actually installed, for an honest settings page.
+
+    Inside a Flatpak the sandbox has its own PATH containing none of the host's
+    programs, so ``shutil.which`` would always come back empty and the settings
+    page would claim the user has no file manager at all. The host's binaries
+    are visible under ``/run/host`` instead.
+    """
+    from .defaults import in_flatpak
+
+    prefixes = ["/run/host/usr/bin", "/run/host/bin", "/run/host/usr/local/bin"] \
+        if in_flatpak() else ["/usr/bin", "/bin", "/usr/local/bin"]
 
     found = []
     for binary, label in [("thunar", "Thunar"), ("nautilus", "Files (Nautilus)"),
                           ("nemo", "Nemo"), ("caja", "Caja"), ("dolphin", "Dolphin"),
                           ("pcmanfm", "PCManFM"), ("pcmanfm-qt", "PCManFM-Qt")]:
-        if shutil.which(binary):
+        if any(os.path.exists(os.path.join(prefix, binary)) for prefix in prefixes):
             found.append(label)
     return found
