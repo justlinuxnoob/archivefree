@@ -90,7 +90,9 @@ sudo apt install 7zip
 flatpak install flathub io.github.justlinuxnoob.ArchiveFree
 ```
 
-> **Note:** the Flathub submission is still pending. Until it's accepted, grab
+> **Note:** the Flathub submission is still pending — see
+> [packaging/flatpak/FLATHUB.md](packaging/flatpak/FLATHUB.md) for exactly what
+> is left. Until it's accepted, grab
 > `archivefree.flatpak` from the
 > [latest release](https://github.com/justlinuxnoob/archivefree/releases/latest)
 > and install it directly:

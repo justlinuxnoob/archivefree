@@ -11,13 +11,33 @@ pull request reviewed by people.
 |---|---|
 | Manifest builds from a clean checkout | ✅ verified in CI |
 | Bundle installs and runs | ✅ verified on Debian 13 / XFCE |
-| `flatpak-builder-lint manifest` | ⚠️ one expected error, see below |
+| `flatpak-builder-lint manifest` | ⚠️ one error needing a reviewer decision, see below |
+| Screenshots in the metainfo | ✅ four, referenced at a fixed tag |
 | AppStream metadata validates | ✅ `appstreamcli validate` passes in CI |
 | Desktop entry validates | ✅ `desktop-file-validate` passes in CI |
 | App ID matches the repo | ✅ `io.github.justlinuxnoob.ArchiveFree` |
 | Bundled dependencies are free software | ✅ 7-Zip (LGPL), built from source |
 
-## The one linter error, and why it's expected
+## Two linter errors that resolve themselves on Flathub
+
+Running `flatpak-builder-lint repo repo` on a **local** build reports:
+
+```
+"appstream-screenshots-not-mirrored-in-ostree"
+"appstream-external-screenshot-url"
+```
+
+Neither is a defect and neither can be fixed here. Flathub's build service
+downloads the screenshot URLs from the metainfo and re-hosts them under
+`https://dl.flathub.org/media`, rewriting the metainfo as it goes. That step
+only happens inside Flathub's own pipeline, so a local build will always show
+these. They disappear once the app is built on Flathub.
+
+What *was* a real blocker — `metainfo-missing-screenshots` — is fixed: the
+metainfo now carries four screenshots, referenced at the `v0.1.1` tag so the
+URLs stay valid.
+
+## The one linter error that needs a human decision
 
 ```
 "errors": ["finish-args-host-filesystem-access"]
@@ -80,14 +100,14 @@ less faithful.
        sources:
          - type: git
            url: https://github.com/justlinuxnoob/archivefree.git
-           tag: v0.1.0
-           commit: <the full SHA that v0.1.0 points at>
+           tag: v0.1.1
+           commit: 7f242e70a8faefb36ef89e9772f116c686844f7f
    ```
 
    Get the SHA with:
 
    ```bash
-   git rev-parse v0.1.0^{commit}
+   git rev-parse v0.1.1^{commit}
    ```
 
    Flathub requires both `tag` and `commit` — the commit is what actually pins
