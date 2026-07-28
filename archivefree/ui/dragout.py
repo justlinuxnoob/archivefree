@@ -145,43 +145,44 @@ def _drag_root() -> str:
     """
     from ..integration.defaults import in_flatpak
 
-    if in_flatpak():
-        root = os.path.join(GLib.get_home_dir(), ".cache", "archivefree", "drag")
-    else:
-        runtime = GLib.get_user_runtime_dir()
-        root = os.path.join(runtime, "archivefree") if runtime and os.path.isdir(runtime) \
-            else os.path.join(tempfile.gettempdir(), "archivefree")
-
+    root = _cache_root() if in_flatpak() else _runtime_root()
     try:
         os.makedirs(root, exist_ok=True)
-        _prune_stale(root)
         return root
     except OSError:
         return tempfile.gettempdir()
 
 
-#: Staging directories are removed when the window closes, but a crash would
-#: leave them behind. Anything older than this is fair game on next start.
-_STALE_AFTER_SECONDS = 24 * 60 * 60
+def prune_orphans() -> None:
+    """Delete staging directories left behind by a previous run.
+
+    Called once at startup. A staging directory belongs to a live window and is
+    removed when that window closes, and the application is single-instance —
+    so anything still present when we start is abandoned, whatever its age.
+
+    This matters more than tidiness. These directories hold the user's own
+    files, extracted out of their archives, and a crash or a force-quit used to
+    leave them sitting in the runtime directory for a full day.
+    """
+    for root in (_runtime_root(), _cache_root()):
+        try:
+            names = os.listdir(root)
+        except OSError:
+            continue
+        for name in names:
+            if name.startswith("archivefree-drag-"):
+                shutil.rmtree(os.path.join(root, name), ignore_errors=True)
 
 
-def _prune_stale(root: str) -> None:
-    """Clear staging directories left behind by a previous run."""
-    import time
+def _runtime_root() -> str:
+    runtime = GLib.get_user_runtime_dir()
+    if runtime and os.path.isdir(runtime):
+        return os.path.join(runtime, "archivefree")
+    return os.path.join(tempfile.gettempdir(), "archivefree")
 
-    cutoff = time.time() - _STALE_AFTER_SECONDS
-    try:
-        for name in os.listdir(root):
-            if not name.startswith("archivefree-drag-"):
-                continue
-            path = os.path.join(root, name)
-            try:
-                if os.path.getmtime(path) < cutoff:
-                    shutil.rmtree(path, ignore_errors=True)
-            except OSError:
-                continue
-    except OSError:
-        pass
+
+def _cache_root() -> str:
+    return os.path.join(GLib.get_home_dir(), ".cache", "archivefree", "drag")
 
 
 def _provider_for(paths: list[str]) -> Gdk.ContentProvider:

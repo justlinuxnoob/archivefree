@@ -251,27 +251,39 @@ def test_outside_a_sandbox_the_runtime_directory_is_used(monkeypatch):
     assert os.path.isdir(root)
 
 
-def test_stale_staging_directories_are_pruned(tmp_path):
-    """A crash would otherwise leave extracted files in the cache forever."""
-    import time
+def test_orphaned_staging_directories_are_swept_at_startup(tmp_path, monkeypatch):
+    """A crash used to leave the user's extracted files lying around for a day.
 
+    These hold real files unpacked out of someone's archives. The app is
+    single-instance, so anything present when it starts is abandoned regardless
+    of age and should go immediately.
+    """
     from archivefree.ui import dragout
 
-    old = tmp_path / "archivefree-drag-old"
-    new = tmp_path / "archivefree-drag-new"
+    orphan_a = tmp_path / "archivefree-drag-aaa"
+    orphan_b = tmp_path / "archivefree-drag-bbb"
     unrelated = tmp_path / "something-else"
-    for directory in (old, new, unrelated):
+    for directory in (orphan_a, orphan_b, unrelated):
         directory.mkdir()
-        (directory / "file.txt").write_text("x")
+        (directory / "private.txt").write_text("the user's data")
 
-    ancient = time.time() - (dragout._STALE_AFTER_SECONDS + 60)
-    os.utime(old, (ancient, ancient))
+    monkeypatch.setattr(dragout, "_runtime_root", lambda: str(tmp_path))
+    monkeypatch.setattr(dragout, "_cache_root", lambda: str(tmp_path))
 
-    dragout._prune_stale(str(tmp_path))
+    dragout.prune_orphans()
 
-    assert not old.exists(), "stale staging directory was not cleaned up"
-    assert new.exists(), "a fresh staging directory was removed"
-    assert unrelated.exists(), "pruning touched something that wasn't ours"
+    assert not orphan_a.exists(), "an orphaned staging directory survived startup"
+    assert not orphan_b.exists()
+    assert unrelated.exists(), "pruning deleted something that wasn't ours"
+
+
+def test_pruning_survives_a_missing_directory(tmp_path, monkeypatch):
+    """First run has no staging directory at all; that must not raise."""
+    from archivefree.ui import dragout
+
+    monkeypatch.setattr(dragout, "_runtime_root", lambda: str(tmp_path / "nope"))
+    monkeypatch.setattr(dragout, "_cache_root", lambda: str(tmp_path / "also-nope"))
+    dragout.prune_orphans()
 
 
 def test_payload_does_not_offer_plain_text(tmp_path):

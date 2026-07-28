@@ -186,6 +186,13 @@ class ArchiveFreeApplication(Adw.Application):
         self._register_icon_path()
         self._install_actions()
 
+        # Drag-to-extract stages real files from the user's archives. A window
+        # cleans up its own, but a crash or a force-quit would leave them
+        # behind; single-instance means anything here now is abandoned.
+        from .ui.dragout import prune_orphans
+
+        prune_orphans()
+
     def _register_icon_path(self) -> None:
         """Let a source checkout find its icons without being installed."""
         from gi.repository import Gdk

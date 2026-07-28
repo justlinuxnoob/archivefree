@@ -80,6 +80,18 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
+    <release version="0.6.1" date="2026-07-28">
+      <description>
+        <p>Files staged for drag-and-drop are cleaned up properly.</p>
+        <ul>
+          <li>Dragging out of an archive unpacks the selection to a temporary
+              folder first. A window clears its own on close, but a crash or a
+              force-quit left those files — real contents of your archives —
+              sitting around for a day. They are now swept the next time
+              ArchiveFree starts</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.6.0" date="2026-07-28">
       <description>
         <p>Three bugs found by a user, all of which needed fixing at the root.</p>
