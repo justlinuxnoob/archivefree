@@ -80,6 +80,18 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
+    <release version="0.2.1" date="2026-07-28">
+      <description>
+        <p>Fixes drag-to-extract in the Flatpak build.</p>
+        <ul>
+          <li>Dragging files out of an archive did nothing in the Flatpak. Files
+              were staged in the runtime directory, which the sandbox remaps —
+              so the file manager received a path that did not exist on the
+              host. They are now staged somewhere both sides resolve
+              identically</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.2.0" date="2026-07-28">
       <description>
         <p>Drag files straight out of an archive, and every format you can open

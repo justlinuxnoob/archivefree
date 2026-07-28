@@ -127,19 +127,61 @@ class DragOutHandler:
 def _drag_root() -> str:
     """Where staging directories live.
 
-    XDG_RUNTIME_DIR is usually a tmpfs that the session cleans up on logout,
-    which is exactly the lifetime we want. Fall back to the system temp
-    directory when it isn't set (some minimal sessions).
+    The receiving file manager runs on the host and opens these paths itself,
+    so the path we stage to must mean the same thing on both sides.
+
+    That rules out the two obvious choices inside a Flatpak. ``/tmp`` is private
+    to the sandbox, and ``XDG_RUNTIME_DIR`` is *remapped*: the app sees
+    ``/run/user/1000/archivefree`` while the host sees
+    ``/run/user/1000/.flatpak/<app-id>/xdg-run/archivefree``. Handing over a URI
+    built from the sandbox's view gives the file manager a path that doesn't
+    exist, and the drop silently does nothing — precisely the failure this
+    feature exists to fix.
+
+    ``~/.cache`` is reachable at its true path on both sides thanks to
+    ``--filesystem=host``, so that is where a sandboxed build stages. Outside a
+    sandbox the runtime directory is better: it's a tmpfs and the session clears
+    it at logout.
     """
-    runtime = GLib.get_user_runtime_dir()
-    if runtime and os.path.isdir(runtime):
-        root = os.path.join(runtime, "archivefree")
-        try:
-            os.makedirs(root, exist_ok=True)
-            return root
-        except OSError:
-            pass
-    return tempfile.gettempdir()
+    from ..integration.defaults import in_flatpak
+
+    if in_flatpak():
+        root = os.path.join(GLib.get_home_dir(), ".cache", "archivefree", "drag")
+    else:
+        runtime = GLib.get_user_runtime_dir()
+        root = os.path.join(runtime, "archivefree") if runtime and os.path.isdir(runtime) \
+            else os.path.join(tempfile.gettempdir(), "archivefree")
+
+    try:
+        os.makedirs(root, exist_ok=True)
+        _prune_stale(root)
+        return root
+    except OSError:
+        return tempfile.gettempdir()
+
+
+#: Staging directories are removed when the window closes, but a crash would
+#: leave them behind. Anything older than this is fair game on next start.
+_STALE_AFTER_SECONDS = 24 * 60 * 60
+
+
+def _prune_stale(root: str) -> None:
+    """Clear staging directories left behind by a previous run."""
+    import time
+
+    cutoff = time.time() - _STALE_AFTER_SECONDS
+    try:
+        for name in os.listdir(root):
+            if not name.startswith("archivefree-drag-"):
+                continue
+            path = os.path.join(root, name)
+            try:
+                if os.path.getmtime(path) < cutoff:
+                    shutil.rmtree(path, ignore_errors=True)
+            except OSError:
+                continue
+    except OSError:
+        pass
 
 
 def _provider_for(paths: list[str]) -> Gdk.ContentProvider:

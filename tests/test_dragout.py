@@ -206,3 +206,58 @@ def test_payload_offers_uri_list(tmp_path):
     formats = provider.ref_formats()
     mimes = formats.get_mime_types() or ()
     assert "text/uri-list" in mimes, f"only offered {mimes}"
+
+
+# -- staging location ----------------------------------------------------
+
+
+def test_staging_path_is_identical_inside_and_outside_a_sandbox(monkeypatch):
+    """The file manager opens these paths itself, from outside the sandbox.
+
+    Inside a Flatpak, XDG_RUNTIME_DIR is remapped — the app sees
+    /run/user/N/archivefree while the host sees
+    /run/user/N/.flatpak/<app>/xdg-run/archivefree. Staging there hands the
+    receiver a path that does not exist and the drop silently does nothing.
+    """
+    from archivefree.ui import dragout
+
+    monkeypatch.setattr("archivefree.integration.defaults.in_flatpak",
+                        lambda: True)
+    root = dragout._drag_root()
+    assert "/.cache/" in root, (
+        f"sandboxed build stages to {root!r}, which the host cannot resolve"
+    )
+    assert "/run/user" not in root
+    assert not root.startswith("/tmp"), "/tmp is private to the sandbox"
+
+
+def test_outside_a_sandbox_the_runtime_directory_is_used(monkeypatch):
+    from archivefree.ui import dragout
+
+    monkeypatch.setattr("archivefree.integration.defaults.in_flatpak",
+                        lambda: False)
+    root = dragout._drag_root()
+    assert os.path.isdir(root)
+
+
+def test_stale_staging_directories_are_pruned(tmp_path):
+    """A crash would otherwise leave extracted files in the cache forever."""
+    import time
+
+    from archivefree.ui import dragout
+
+    old = tmp_path / "archivefree-drag-old"
+    new = tmp_path / "archivefree-drag-new"
+    unrelated = tmp_path / "something-else"
+    for directory in (old, new, unrelated):
+        directory.mkdir()
+        (directory / "file.txt").write_text("x")
+
+    ancient = time.time() - (dragout._STALE_AFTER_SECONDS + 60)
+    os.utime(old, (ancient, ancient))
+
+    dragout._prune_stale(str(tmp_path))
+
+    assert not old.exists(), "stale staging directory was not cleaned up"
+    assert new.exists(), "a fresh staging directory was removed"
+    assert unrelated.exists(), "pruning touched something that wasn't ours"
